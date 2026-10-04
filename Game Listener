@@ -1,336 +1,292 @@
---// LEGIT AIM ASSIST + WALL ESP
---// LocalScript -> StarterPlayer > StarterPlayerScripts
---// Intended for your own Roblox experience
+--// CLASSIC BASEPLATE + DRIVABLE CAR
+--// LocalScript - StarterPlayer > StarterPlayerScripts
 
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 
-local LocalPlayer = Players.LocalPlayer
-local Camera = workspace.CurrentCamera
+local player = Players.LocalPlayer
 
-local Settings = {
-	AimEnabled = false,
-	ESPEnabled = true,
-	TeamCheck = false,
+--==================================================
+-- BASEPLATE
+--==================================================
 
-	FOV = 300,
-	Smoothness = 0.35,
+local old = workspace:FindFirstChild("ClassicWorld")
 
-	TargetPart = "Head"
-}
+if old then
+	old:Destroy()
+end
+
+local world = Instance.new("Folder")
+world.Name = "ClassicWorld"
+world.Parent = workspace
+
+local baseplate = Instance.new("Part")
+baseplate.Name = "ClassicBaseplate"
+baseplate.Size = Vector3.new(512, 10, 512)
+baseplate.Position = Vector3.new(0, -5, 0)
+baseplate.Anchored = true
+baseplate.Material = Enum.Material.Plastic
+baseplate.Color = Color3.fromRGB(91, 154, 76)
+baseplate.TopSurface = Enum.SurfaceType.Studs
+baseplate.BottomSurface = Enum.SurfaceType.Inlet
+baseplate.Parent = world
+
+-- Spawn
+local spawn = Instance.new("SpawnLocation")
+spawn.Name = "ClassicSpawn"
+spawn.Size = Vector3.new(8, 1, 8)
+spawn.Position = Vector3.new(0, 1, 0)
+spawn.Anchored = true
+spawn.Neutral = true
+spawn.Transparency = 0.2
+spawn.Color = Color3.fromRGB(80, 170, 255)
+spawn.Parent = world
+
+--==================================================
+-- SPAWN PLAYER
+--==================================================
+
+local function teleportPlayer()
+	local character = player.Character or player.CharacterAdded:Wait()
+	local root = character:WaitForChild("HumanoidRootPart")
+
+	root.CFrame = CFrame.new(0, 6, 0)
+end
+
+player.CharacterAdded:Connect(function()
+	task.wait(0.5)
+	teleportPlayer()
+end)
+
+if player.Character then
+	task.wait(0.5)
+	teleportPlayer()
+end
+
+--==================================================
+-- CAR CREATION
+--==================================================
+
+local function createCar()
+	local car = Instance.new("Model")
+	car.Name = "ClassicCar"
+	car.Parent = world
+
+	local body = Instance.new("Part")
+	body.Name = "Body"
+	body.Size = Vector3.new(7, 1.5, 11)
+	body.Position = Vector3.new(0, 3, -18)
+	body.Color = Color3.fromRGB(200, 30, 30)
+	body.Material = Enum.Material.SmoothPlastic
+	body.Anchored = true
+	body.Parent = car
+
+	local cabin = Instance.new("Part")
+	cabin.Name = "Cabin"
+	cabin.Size = Vector3.new(5.5, 2.2, 5)
+	cabin.Position = Vector3.new(0, 4.7, -18)
+	cabin.Color = Color3.fromRGB(40, 40, 45)
+	cabin.Material = Enum.Material.SmoothPlastic
+	cabin.Anchored = true
+	cabin.Parent = car
+
+	-- Wheels
+	local wheelPositions = {
+		Vector3.new(-4, 2.3, -21),
+		Vector3.new(4, 2.3, -21),
+		Vector3.new(-4, 2.3, -15),
+		Vector3.new(4, 2.3, -15)
+	}
+
+	for i, pos in ipairs(wheelPositions) do
+		local wheel = Instance.new("Part")
+		wheel.Name = "Wheel" .. i
+		wheel.Shape = Enum.PartType.Cylinder
+		wheel.Size = Vector3.new(2, 1, 2)
+		wheel.Position = pos
+		wheel.Orientation = Vector3.new(0, 0, 90)
+		wheel.Color = Color3.fromRGB(20, 20, 20)
+		wheel.Material = Enum.Material.Rubber
+		wheel.Anchored = true
+		wheel.Parent = car
+	end
+
+	-- Driver seat
+	local seat = Instance.new("Seat")
+	seat.Name = "DriverSeat"
+	seat.Size = Vector3.new(3, 1, 3)
+	seat.Position = Vector3.new(0, 3.8, -18)
+	seat.Color = Color3.fromRGB(30, 30, 30)
+	seat.Anchored = true
+	seat.Parent = car
+
+	-- Car controller
+	local driving = false
+	local speed = 0
+	local rotation = 0
+
+	seat:GetPropertyChangedSignal("Occupant"):Connect(function()
+		driving = seat.Occupant ~= nil
+	end)
+
+	RunService.RenderStepped:Connect(function(dt)
+		if not driving then
+			return
+		end
+
+		local forward = 0
+		local turn = 0
+
+		if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+			forward += 1
+		end
+
+		if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+			forward -= 1
+		end
+
+		if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+			turn -= 1
+		end
+
+		if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+			turn += 1
+		end
+
+		speed = forward * 45
+
+		rotation = rotation + turn * 1.8 * dt
+
+		local current = body.CFrame
+
+		current =
+			current
+			* CFrame.Angles(0, -turn * 0.8 * dt, 0)
+			+ current.LookVector * speed * dt
+
+		-- Keep car on the baseplate
+		current = CFrame.new(
+			current.Position.X,
+			3,
+			current.Position.Z
+		) * CFrame.Angles(
+			0,
+			current:ToEulerAnglesYXZ(),
+			0
+		)
+
+		body.CFrame = current
+
+		-- Move the other car parts with the body
+		local bodyCF = body.CFrame
+
+		cabin.CFrame =
+			bodyCF * CFrame.new(0, 1.8, 0)
+
+		seat.CFrame =
+			bodyCF * CFrame.new(0, 0.8, 0)
+
+		local offsets = {
+			Vector3.new(-4, -0.7, -3),
+			Vector3.new(4, -0.7, -3),
+			Vector3.new(-4, -0.7, 3),
+			Vector3.new(4, -0.7, 3)
+		}
+
+		for i, offset in ipairs(offsets) do
+			local wheel = car:FindFirstChild("Wheel" .. i)
+
+			if wheel then
+				wheel.CFrame =
+					bodyCF
+					* CFrame.new(offset)
+					* CFrame.Angles(0, 0, math.rad(90))
+			end
+		end
+	end)
+
+	return car
+end
+
+local car = createCar()
 
 --==================================================
 -- GUI
 --==================================================
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "AimAssist"
+gui.Name = "ClassicWorldMenu"
 gui.ResetOnSpawn = false
-gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+gui.Parent = player:WaitForChild("PlayerGui")
 
-local main = Instance.new("Frame")
-main.Size = UDim2.fromOffset(300, 290)
-main.Position = UDim2.new(0, 25, 0.5, -145)
-main.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
-main.BorderSizePixel = 0
-main.Parent = gui
+local frame = Instance.new("Frame")
+frame.Size = UDim2.fromOffset(230, 170)
+frame.Position = UDim2.fromOffset(20, 100)
+frame.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+frame.BorderSizePixel = 0
+frame.Parent = gui
 
-Instance.new("UICorner", main).CornerRadius = UDim.new(0, 12)
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 10)
 
 local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, 0, 0, 50)
+title.Size = UDim2.new(1, 0, 0, 40)
 title.BackgroundTransparency = 1
-title.Text = "🎯 AIM ASSIST"
-title.TextColor3 = Color3.new(1,1,1)
-title.TextSize = 22
+title.Text = "🏠 Classic World"
+title.TextColor3 = Color3.new(1, 1, 1)
+title.TextSize = 19
 title.Font = Enum.Font.GothamBold
-title.Parent = main
+title.Parent = frame
 
 local function makeButton(text, y, callback)
-	local b = Instance.new("TextButton")
-	b.Size = UDim2.new(1, -30, 0, 42)
-	b.Position = UDim2.fromOffset(15, y)
-	b.BackgroundColor3 = Color3.fromRGB(42,42,50)
-	b.TextColor3 = Color3.new(1,1,1)
-	b.Text = text
-	b.TextSize = 16
-	b.Font = Enum.Font.GothamSemibold
-	b.Parent = main
+	local button = Instance.new("TextButton")
+	button.Size = UDim2.new(1, -20, 0, 38)
+	button.Position = UDim2.fromOffset(10, y)
+	button.BackgroundColor3 = Color3.fromRGB(55, 55, 65)
+	button.TextColor3 = Color3.new(1, 1, 1)
+	button.Text = text
+	button.TextSize = 15
+	button.Font = Enum.Font.GothamSemibold
+	button.Parent = frame
 
-	Instance.new("UICorner", b).CornerRadius = UDim.new(0, 8)
+	Instance.new("UICorner", button).CornerRadius = UDim.new(0, 7)
 
-	b.MouseButton1Click:Connect(callback)
+	button.MouseButton1Click:Connect(callback)
 
-	return b
+	return button
 end
 
-local aimButton = makeButton("Aim Assist: OFF", 60, function()
-	Settings.AimEnabled = not Settings.AimEnabled
-	aimButton.Text = "Aim Assist: " ..
-		(Settings.AimEnabled and "ON" or "OFF")
+makeButton("🚗 Spawn Car", 45, function()
+	if world:FindFirstChild("ClassicCar") then
+		world.ClassicCar:Destroy()
+	end
+
+	car = createCar()
 end)
 
-local espButton = makeButton("Wall ESP: ON", 110, function()
-	Settings.ESPEnabled = not Settings.ESPEnabled
-	espButton.Text = "Wall ESP: " ..
-		(Settings.ESPEnabled and "ON" or "OFF")
+makeButton("📍 Spawn Me", 90, function()
+	teleportPlayer()
 end)
 
-local teamButton = makeButton("Team Check: OFF", 160, function()
-	Settings.TeamCheck = not Settings.TeamCheck
-	teamButton.Text = "Team Check: " ..
-		(Settings.TeamCheck and "ON" or "OFF")
-end)
+makeButton("🔄 Reset World", 135, function()
+	world:ClearAllChildren()
 
-local fovButton = makeButton("FOV: 300", 210, function()
-	Settings.FOV += 50
+	baseplate = Instance.new("Part")
+	baseplate.Size = Vector3.new(512, 10, 512)
+	baseplate.Position = Vector3.new(0, -5, 0)
+	baseplate.Anchored = true
+	baseplate.Material = Enum.Material.Plastic
+	baseplate.Color = Color3.fromRGB(91, 154, 76)
+	baseplate.TopSurface = Enum.SurfaceType.Studs
+	baseplate.Parent = world
 
-	if Settings.FOV > 600 then
-		Settings.FOV = 100
-	end
+	local newSpawn = Instance.new("SpawnLocation")
+	newSpawn.Size = Vector3.new(8, 1, 8)
+	newSpawn.Position = Vector3.new(0, 1, 0)
+	newSpawn.Anchored = true
+	newSpawn.Neutral = true
+	newSpawn.Parent = world
 
-	fovButton.Text = "FOV: " .. Settings.FOV
-end)
-
---==================================================
--- FOV CIRCLE
---==================================================
-
-local fov = Instance.new("Frame")
-fov.AnchorPoint = Vector2.new(0.5, 0.5)
-fov.BackgroundTransparency = 1
-fov.BorderSizePixel = 0
-fov.Parent = gui
-
-local fovCorner = Instance.new("UICorner")
-fovCorner.CornerRadius = UDim.new(1, 0)
-fovCorner.Parent = fov
-
-local fovStroke = Instance.new("UIStroke")
-fovStroke.Color = Color3.fromRGB(255, 60, 60)
-fovStroke.Thickness = 2
-fovStroke.Parent = fov
-
---==================================================
--- ESP
---==================================================
-
-local esp = {}
-
-local function removeESP(player)
-	local data = esp[player]
-
-	if data then
-		if data.highlight then
-			data.highlight:Destroy()
-		end
-
-		if data.name then
-			data.name:Destroy()
-		end
-
-		esp[player] = nil
-	end
-end
-
-local function addESP(player, character)
-	if player == LocalPlayer then
-		return
-	end
-
-	removeESP(player)
-
-	local highlight = Instance.new("Highlight")
-	highlight.Name = "WallESP"
-
-	-- IMPORTANT:
-	-- Makes ESP visible through walls.
-	highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-
-	highlight.FillColor = Color3.fromRGB(255, 50, 50)
-	highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
-
-	highlight.FillTransparency = 0.65
-	highlight.OutlineTransparency = 0
-
-	highlight.Adornee = character
-	highlight.Enabled = Settings.ESPEnabled
-	highlight.Parent = character
-
-	local nameGui
-
-	local head = character:FindFirstChild("Head")
-
-	if head then
-		nameGui = Instance.new("BillboardGui")
-		nameGui.Name = "ESPName"
-		nameGui.Size = UDim2.fromOffset(160, 30)
-		nameGui.StudsOffset = Vector3.new(0, 3, 0)
-		nameGui.AlwaysOnTop = true
-		nameGui.Adornee = head
-		nameGui.Enabled = Settings.ESPEnabled
-		nameGui.Parent = gui
-
-		local label = Instance.new("TextLabel")
-		label.Size = UDim2.fromScale(1,1)
-		label.BackgroundTransparency = 1
-		label.Text = player.DisplayName
-		label.TextColor3 = Color3.fromRGB(255, 70, 70)
-		label.TextStrokeTransparency = 0
-		label.TextSize = 14
-		label.Font = Enum.Font.GothamBold
-		label.Parent = nameGui
-	end
-
-	esp[player] = {
-		highlight = highlight,
-		name = nameGui
-	}
-end
-
-local function setupPlayer(player)
-	if player == LocalPlayer then
-		return
-	end
-
-	player.CharacterAdded:Connect(function(character)
-		task.wait(0.25)
-		addESP(player, character)
-	end)
-
-	if player.Character then
-		addESP(player, player.Character)
-	end
-end
-
-for _, player in ipairs(Players:GetPlayers()) do
-	setupPlayer(player)
-end
-
-Players.PlayerAdded:Connect(setupPlayer)
-Players.PlayerRemoving:Connect(removeESP)
-
---==================================================
--- FIND HEAD
---==================================================
-
-local function getNearestHead()
-	local center = Vector2.new(
-		Camera.ViewportSize.X / 2,
-		Camera.ViewportSize.Y / 2
-	)
-
-	local closestHead = nil
-	local closestDistance = Settings.FOV
-
-	for _, player in ipairs(Players:GetPlayers()) do
-
-		if player ~= LocalPlayer then
-
-			if Settings.TeamCheck and
-				player.Team == LocalPlayer.Team then
-				continue
-			end
-
-			local character = player.Character
-
-			if character then
-				local humanoid =
-					character:FindFirstChildOfClass("Humanoid")
-
-				local head = character:FindFirstChild("Head")
-
-				if humanoid and humanoid.Health > 0 and head then
-
-					local position, visible =
-						Camera:WorldToViewportPoint(head.Position)
-
-					if visible then
-
-						local screen =
-							Vector2.new(position.X, position.Y)
-
-						local distance =
-							(screen - center).Magnitude
-
-						if distance < closestDistance then
-							closestDistance = distance
-							closestHead = head
-						end
-					end
-				end
-			end
-		end
-	end
-
-	return closestHead
-end
-
---==================================================
--- MAIN LOOP
---==================================================
-
-RunService.RenderStepped:Connect(function()
-
-	local center = Vector2.new(
-		Camera.ViewportSize.X / 2,
-		Camera.ViewportSize.Y / 2
-	)
-
-	fov.Position = UDim2.fromOffset(center.X, center.Y)
-
-	fov.Size = UDim2.fromOffset(
-		Settings.FOV * 2,
-		Settings.FOV * 2
-	)
-
-	fov.Visible = Settings.AimEnabled
-
-	-- Update ESP
-	for _, data in pairs(esp) do
-		if data.highlight then
-			data.highlight.Enabled = Settings.ESPEnabled
-		end
-
-		if data.name then
-			data.name.Enabled = Settings.ESPEnabled
-		end
-	end
-
-	-- Head tracking
-	if Settings.AimEnabled then
-
-		local head = getNearestHead()
-
-		if head then
-			local targetCFrame = CFrame.lookAt(
-				Camera.CFrame.Position,
-				head.Position
-			)
-
-			Camera.CFrame = Camera.CFrame:Lerp(
-				targetCFrame,
-				Settings.Smoothness
-			)
-		end
-	end
-end)
-
---==================================================
--- MENU TOGGLE
---==================================================
-
-local toggle = Instance.new("TextButton")
-toggle.Size = UDim2.fromOffset(50, 50)
-toggle.Position = UDim2.fromOffset(15, 15)
-toggle.BackgroundColor3 = Color3.fromRGB(30,30,35)
-toggle.Text = "🎯"
-toggle.TextSize = 24
-toggle.Parent = gui
-
-Instance.new("UICorner", toggle).CornerRadius = UDim.new(1,0)
-
-toggle.MouseButton1Click:Connect(function()
-	main.Visible = not main.Visible
+	car = createCar()
+	teleportPlayer()
 end)
