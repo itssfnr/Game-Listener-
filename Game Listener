@@ -1,78 +1,366 @@
+--// AIM ASSIST + ESP
+--// LocalScript -> StarterPlayer > StarterPlayerScripts
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
-local player = Players.LocalPlayer
-local camera = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+--==================================================
+-- SETTINGS
+--==================================================
+
+local Settings = {
+	AimEnabled = false,
+	ESPEnabled = true,
+
+	FOV = 250,
+	Smoothness = 0.18,
+
+	TeamCheck = false,
+	VisibleCheck = false,
+
+	TargetPart = "Head"
+}
+
+--==================================================
+-- GUI
+--==================================================
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "AimTraining"
+gui.Name = "AimAssistMenu"
 gui.ResetOnSpawn = false
-gui.Parent = player:WaitForChild("PlayerGui")
+gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
-local button = Instance.new("TextButton")
-button.Size = UDim2.fromOffset(180, 45)
-button.Position = UDim2.fromOffset(20, 100)
-button.Text = "Aim Assist: OFF"
-button.TextSize = 18
-button.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
-button.TextColor3 = Color3.new(1, 1, 1)
-button.Parent = gui
+local main = Instance.new("Frame")
+main.Size = UDim2.fromOffset(300, 330)
+main.Position = UDim2.new(0, 25, 0.5, -165)
+main.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+main.BorderSizePixel = 0
+main.Parent = gui
 
-local enabled = false
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 12)
+corner.Parent = main
 
-button.MouseButton1Click:Connect(function()
-	enabled = not enabled
-	button.Text = enabled and "Aim Assist: ON" or "Aim Assist: OFF"
-	button.BackgroundColor3 = enabled
-		and Color3.fromRGB(40, 130, 70)
-		or Color3.fromRGB(35, 35, 40)
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 50)
+title.BackgroundTransparency = 1
+title.Text = "🎯 AIM + ESP"
+title.TextColor3 = Color3.new(1, 1, 1)
+title.TextSize = 22
+title.Font = Enum.Font.GothamBold
+title.Parent = main
+
+local function createButton(text, y, callback)
+	local b = Instance.new("TextButton")
+	b.Size = UDim2.new(1, -30, 0, 42)
+	b.Position = UDim2.fromOffset(15, y)
+	b.BackgroundColor3 = Color3.fromRGB(40, 40, 48)
+	b.TextColor3 = Color3.new(1, 1, 1)
+	b.Text = text
+	b.TextSize = 16
+	b.Font = Enum.Font.GothamSemibold
+	b.Parent = main
+
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, 8)
+	c.Parent = b
+
+	b.MouseButton1Click:Connect(callback)
+
+	return b
+end
+
+local aimButton
+local espButton
+local teamButton
+
+aimButton = createButton("Aim Assist: OFF", 65, function()
+	Settings.AimEnabled = not Settings.AimEnabled
+
+	aimButton.Text =
+		"Aim Assist: " .. (Settings.AimEnabled and "ON" or "OFF")
 end)
 
-local function getNearestDummy()
-	local nearest
-	local distance = math.huge
+espButton = createButton("ESP: ON", 115, function()
+	Settings.ESPEnabled = not Settings.ESPEnabled
 
-	for _, obj in ipairs(workspace:GetChildren()) do
-		if obj:IsA("Model") and obj:GetAttribute("AimTrainingDummy") then
-			local head = obj:FindFirstChild("Head")
+	espButton.Text =
+		"ESP: " .. (Settings.ESPEnabled and "ON" or "OFF")
+end)
 
-			if head then
-				local screenPos, visible =
-					camera:WorldToViewportPoint(head.Position)
+teamButton = createButton("Team Check: OFF", 165, function()
+	Settings.TeamCheck = not Settings.TeamCheck
 
-				if visible then
-					local center = Vector2.new(
-						camera.ViewportSize.X / 2,
-						camera.ViewportSize.Y / 2
-					)
+	teamButton.Text =
+		"Team Check: " .. (Settings.TeamCheck and "ON" or "OFF")
+end)
 
-					local d = (
-						Vector2.new(screenPos.X, screenPos.Y) - center
-					).Magnitude
+createButton("FOV: 250", 215, function()
+	Settings.FOV += 50
 
-					if d < distance then
-						distance = d
-						nearest = head
+	if Settings.FOV > 500 then
+		Settings.FOV = 100
+	end
+
+	local button = main:FindFirstChildOfClass("TextButton")
+
+	-- update matching FOV button
+	for _, obj in ipairs(main:GetChildren()) do
+		if obj:IsA("TextButton") and obj ~= aimButton
+			and obj ~= espButton and obj ~= teamButton then
+
+			if string.find(obj.Text, "FOV") then
+				obj.Text = "FOV: " .. Settings.FOV
+			end
+		end
+	end
+end)
+
+--==================================================
+-- FOV CIRCLE
+--==================================================
+
+local fovCircle = Instance.new("Frame")
+fovCircle.Name = "FOV"
+fovCircle.AnchorPoint = Vector2.new(0.5, 0.5)
+fovCircle.BackgroundTransparency = 1
+fovCircle.BorderSizePixel = 0
+fovCircle.Parent = gui
+
+local fovCorner = Instance.new("UICorner")
+fovCorner.CornerRadius = UDim.new(1, 0)
+fovCorner.Parent = fovCircle
+
+local fovStroke = Instance.new("UIStroke")
+fovStroke.Color = Color3.fromRGB(255, 70, 70)
+fovStroke.Thickness = 2
+fovStroke.Transparency = 0.25
+fovStroke.Parent = fovCircle
+
+--==================================================
+-- ESP
+--==================================================
+
+local espObjects = {}
+
+local function removeESP(player)
+	local data = espObjects[player]
+
+	if data then
+		if data.highlight then
+			data.highlight:Destroy()
+		end
+
+		if data.billboard then
+			data.billboard:Destroy()
+		end
+
+		espObjects[player] = nil
+	end
+end
+
+local function createESP(player, character)
+	if player == LocalPlayer then
+		return
+	end
+
+	removeESP(player)
+
+	local highlight = Instance.new("Highlight")
+	highlight.Name = "AimESP"
+	highlight.FillColor = Color3.fromRGB(255, 60, 60)
+	highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+	highlight.FillTransparency = 0.65
+	highlight.OutlineTransparency = 0
+	highlight.Adornee = character
+	highlight.Parent = character
+
+	local head = character:FindFirstChild("Head")
+
+	local billboard
+
+	if head then
+		billboard = Instance.new("BillboardGui")
+		billboard.Name = "ESPName"
+		billboard.Size = UDim2.fromOffset(160, 35)
+		billboard.StudsOffset = Vector3.new(0, 3, 0)
+		billboard.AlwaysOnTop = true
+		billboard.Adornee = head
+		billboard.Parent = gui
+
+		local label = Instance.new("TextLabel")
+		label.Size = UDim2.fromScale(1, 1)
+		label.BackgroundTransparency = 1
+		label.Text = player.DisplayName
+		label.TextColor3 = Color3.fromRGB(255, 80, 80)
+		label.TextStrokeTransparency = 0
+		label.TextSize = 14
+		label.Font = Enum.Font.GothamBold
+		label.Parent = billboard
+	end
+
+	espObjects[player] = {
+		highlight = highlight,
+		billboard = billboard
+	}
+end
+
+local function setupPlayer(player)
+	if player == LocalPlayer then
+		return
+	end
+
+	player.CharacterAdded:Connect(function(character)
+		task.wait(0.5)
+		createESP(player, character)
+	end)
+
+	if player.Character then
+		createESP(player, player.Character)
+	end
+end
+
+for _, player in ipairs(Players:GetPlayers()) do
+	setupPlayer(player)
+end
+
+Players.PlayerAdded:Connect(setupPlayer)
+Players.PlayerRemoving:Connect(removeESP)
+
+--==================================================
+-- TARGET FINDER
+--==================================================
+
+local function getTarget()
+	local center = Vector2.new(
+		Camera.ViewportSize.X / 2,
+		Camera.ViewportSize.Y / 2
+	)
+
+	local closest = nil
+	local closestDistance = Settings.FOV
+
+	for _, player in ipairs(Players:GetPlayers()) do
+
+		if player ~= LocalPlayer then
+
+			if Settings.TeamCheck
+				and player.Team == LocalPlayer.Team then
+				continue
+			end
+
+			local character = player.Character
+
+			if character then
+				local humanoid =
+					character:FindFirstChildOfClass("Humanoid")
+
+				local head = character:FindFirstChild("Head")
+
+				if humanoid
+					and humanoid.Health > 0
+					and head then
+
+					local screenPosition, visible =
+						Camera:WorldToViewportPoint(head.Position)
+
+					if visible then
+						local distance =
+							(Vector2.new(
+								screenPosition.X,
+								screenPosition.Y
+							) - center).Magnitude
+
+						if distance < closestDistance then
+							closestDistance = distance
+							closest = head
+						end
 					end
 				end
 			end
 		end
 	end
 
-	return nearest
+	return closest
 end
 
+--==================================================
+-- AIM ASSIST
+--==================================================
+
 RunService.RenderStepped:Connect(function()
-	if not enabled then
+
+	local center = Vector2.new(
+		Camera.ViewportSize.X / 2,
+		Camera.ViewportSize.Y / 2
+	)
+
+	fovCircle.Position = UDim2.fromOffset(
+		center.X,
+		center.Y
+	)
+
+	fovCircle.Size = UDim2.fromOffset(
+		Settings.FOV * 2,
+		Settings.FOV * 2
+	)
+
+	fovCircle.Visible = Settings.AimEnabled
+
+	-- ESP visibility
+	for player, data in pairs(espObjects) do
+		local visible = Settings.ESPEnabled
+
+		if data.highlight then
+			data.highlight.Enabled = visible
+		end
+
+		if data.billboard then
+			data.billboard.Enabled = visible
+		end
+	end
+
+	if not Settings.AimEnabled then
 		return
 	end
 
-	local head = getNearestDummy()
+	local target = getTarget()
 
-	if head then
-		camera.CFrame = CFrame.lookAt(
-			camera.CFrame.Position,
-			head.Position
-		)
+	if target then
+		local desired =
+			CFrame.lookAt(
+				Camera.CFrame.Position,
+				target.Position
+			)
+
+		Camera.CFrame =
+			Camera.CFrame:Lerp(
+				desired,
+				Settings.Smoothness
+			)
 	end
+end)
+
+--==================================================
+-- TOGGLE MENU
+--==================================================
+
+local toggle = Instance.new("TextButton")
+toggle.Size = UDim2.fromOffset(50, 50)
+toggle.Position = UDim2.fromOffset(15, 15)
+toggle.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+toggle.Text = "🎯"
+toggle.TextSize = 24
+toggle.Parent = gui
+
+local toggleCorner = Instance.new("UICorner")
+toggleCorner.CornerRadius = UDim.new(1, 0)
+toggleCorner.Parent = toggle
+
+toggle.MouseButton1Click:Connect(function()
+	main.Visible = not main.Visible
 end)
