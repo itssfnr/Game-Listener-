@@ -1,21 +1,60 @@
--- DRONE CONTROLLER
--- W/S = vor/zurück
--- A/D = links/rechts
--- Space = hoch
--- LeftControl = runter
--- Shift = Boost
--- Q = Drohne verlassen
+--==============================================================
+-- SKYDRONE X
+-- ONE LOCAL SCRIPT
+--
+-- WASD       = fliegen
+-- SPACE      = hoch
+-- CTRL       = runter
+-- SHIFT      = Boost
+-- MOUSE      = Kamera bewegen
+-- RMB        = Kamera-Fokus
+-- F          = Training-Laser
+-- Q          = Drohnenmodus verlassen
+-- R          = Drohne neu starten
+--==============================================================
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
+local UIS = game:GetService("UserInputService")
+local Debris = game:GetService("Debris")
 
 local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
+--==============================================================
+-- SETTINGS
+--==============================================================
+
+local NORMAL_SPEED = 55
+local BOOST_SPEED = 105
+local VERTICAL_SPEED = 42
+
+local CAMERA_DISTANCE = 12
+local CAMERA_HEIGHT = 5
+
+local MOUSE_SENSITIVITY = 0.0025
+local CAMERA_SMOOTH = 10
+
 local flying = false
+local boosting = false
+local firing = false
+
 local drone
-local droneCore
+local core
+local velocityController
+local angularController
+
+local rotors = {}
+local leds = {}
+local thrusters = {}
+
+local yaw = 0
+local pitch = -0.18
+
+local cameraYaw = 0
+local cameraPitch = -0.18
+
+local currentVelocity = Vector3.zero
 
 local keys = {
 	W = false,
@@ -23,26 +62,32 @@ local keys = {
 	A = false,
 	D = false,
 	Up = false,
-	Down = false,
-	Boost = false
+	Down = false
 }
 
-local speed = 55
-local boostSpeed = 100
-local verticalSpeed = 38
+--==============================================================
+-- HELPERS
+--==============================================================
 
-local function createPart(parent, name, size, color, material)
+local function makePart(parent, name, size, color, material)
 	local p = Instance.new("Part")
+
 	p.Name = name
 	p.Size = size
 	p.Color = color
 	p.Material = material or Enum.Material.SmoothPlastic
+
+	p.Anchored = false
 	p.CanCollide = false
 	p.CanTouch = false
 	p.CanQuery = false
 	p.Massless = true
-	p.Anchored = false
+
+	p.TopSurface = Enum.SurfaceType.Smooth
+	p.BottomSurface = Enum.SurfaceType.Smooth
+
 	p.Parent = parent
+
 	return p
 end
 
@@ -54,131 +99,182 @@ local function weld(a, b)
 	return w
 end
 
+local function createLight(parent, color, range, brightness)
+	local light = Instance.new("PointLight")
+
+	light.Color = color
+	light.Range = range
+	light.Brightness = brightness
+
+	light.Parent = parent
+
+	return light
+end
+
+--==============================================================
+-- DRONE CREATION
+--==============================================================
+
 local function createDrone()
 
 	if drone then
 		drone:Destroy()
 	end
 
+	rotors = {}
+	leds = {}
+	thrusters = {}
+
 	drone = Instance.new("Model")
-	drone.Name = "PlayerDrone"
+	drone.Name = "SkyDrone"
 	drone.Parent = workspace
 
 	local character = player.Character
 	local root = character and character:FindFirstChild("HumanoidRootPart")
 
-	local spawnPosition =
-		root and
-		(root.Position + Vector3.new(0, 8, -4))
-		or Vector3.new(0, 20, 0)
+	local spawnPosition
 
-	droneCore = createPart(
+	if root then
+		spawnPosition =
+			root.Position
+			+ Vector3.new(0, 12, 0)
+	else
+		spawnPosition = Vector3.new(0, 30, 0)
+	end
+
+	--==========================================================
+	-- CORE
+	--==========================================================
+
+	core = makePart(
 		drone,
-		"DroneCore",
-		Vector3.new(3, 0.65, 3),
-		Color3.fromRGB(20, 23, 30),
+		"Core",
+		Vector3.new(3.4, 0.65, 3.4),
+		Color3.fromRGB(17, 20, 27),
 		Enum.Material.Metal
 	)
 
-	droneCore.CFrame =
-		CFrame.new(spawnPosition)
+	core.CFrame = CFrame.new(spawnPosition)
 
-	drone.PrimaryPart = droneCore
+	drone.PrimaryPart = core
 
-	-- obere Platte
-	local top = createPart(
+	--==========================================================
+	-- BODY SHELL
+	--==========================================================
+
+	local shell = makePart(
 		drone,
-		"Top",
-		Vector3.new(2.2, 0.25, 2.2),
-		Color3.fromRGB(45, 48, 58),
-		Enum.Material.Metal
+		"Shell",
+		Vector3.new(2.7, 0.45, 2.7),
+		Color3.fromRGB(35, 40, 50),
+		Enum.Material.SmoothPlastic
 	)
 
-	top.CFrame =
-		droneCore.CFrame *
+	shell.CFrame =
+		core.CFrame *
 		CFrame.new(0, 0.45, 0)
 
-	weld(droneCore, top)
+	weld(core, shell)
 
-	-- Kamera
-	local cameraMount = createPart(
+	--==========================================================
+	-- FRONT CAMERA
+	--==========================================================
+
+	local cameraHousing = makePart(
 		drone,
-		"CameraMount",
-		Vector3.new(1.15, 0.65, 0.55),
-		Color3.fromRGB(8, 10, 13),
+		"CameraHousing",
+		Vector3.new(1.25, 0.7, 0.7),
+		Color3.fromRGB(8, 10, 14),
 		Enum.Material.Metal
 	)
 
-	cameraMount.CFrame =
-		droneCore.CFrame *
-		CFrame.new(0, -0.05, -1.55)
+	cameraHousing.CFrame =
+		core.CFrame *
+		CFrame.new(0, -0.05, -1.65)
 
-	weld(droneCore, cameraMount)
+	weld(core, cameraHousing)
 
-	-- Kamera-Linse
-	local lens = createPart(
+	local lens = makePart(
 		drone,
-		"CameraLens",
-		Vector3.new(0.65, 0.42, 0.15),
-		Color3.fromRGB(20, 120, 190),
+	"CameraLens",
+		Vector3.new(0.72, 0.5, 0.15),
+		Color3.fromRGB(15, 115, 190),
 		Enum.Material.Neon
 	)
 
 	lens.CFrame =
-		cameraMount.CFrame *
-		CFrame.new(0, 0, -0.35)
+		cameraHousing.CFrame *
+		CFrame.new(0, 0, -0.4)
 
-	weld(cameraMount, lens)
+	weld(cameraHousing, lens)
 
-	-- Arme
-	local armPositions = {
-		Vector3.new( 2.0, 0,  2.0),
-		Vector3.new(-2.0, 0,  2.0),
-		Vector3.new( 2.0, 0, -2.0),
-		Vector3.new(-2.0, 0, -2.0),
+	local lensLight =
+		createLight(
+			lens,
+			Color3.fromRGB(20, 150, 255),
+			7,
+			1.5
+		)
+
+	--==========================================================
+	-- ARMS
+	--==========================================================
+
+	local armData = {
+		Vector3.new( 2.1, 0,  2.1),
+		Vector3.new(-2.1, 0,  2.1),
+		Vector3.new( 2.1, 0, -2.1),
+		Vector3.new(-2.1, 0, -2.1)
 	}
 
-	for i, offset in ipairs(armPositions) do
+	for i, offset in ipairs(armData) do
 
-		local arm = createPart(
+		local arm = makePart(
 			drone,
-			"Arm" .. i,
-			Vector3.new(2.4, 0.22, 0.22),
-			Color3.fromRGB(35, 38, 45),
+			"Arm_" .. i,
+			Vector3.new(2.8, 0.22, 0.24),
+			Color3.fromRGB(30, 34, 42),
 			Enum.Material.Metal
 		)
 
 		arm.CFrame =
-			droneCore.CFrame *
-			CFrame.new(offset/2) *
+			core.CFrame *
+			CFrame.new(offset / 2) *
 			CFrame.Angles(
 				0,
 				math.rad(45),
 				0
 			)
 
-		weld(droneCore, arm)
+		weld(core, arm)
 
-		local motor = createPart(
+		--======================================================
+		-- MOTOR
+		--======================================================
+
+		local motor = makePart(
 			drone,
-			"Motor" .. i,
-			Vector3.new(0.65, 0.35, 0.65),
-			Color3.fromRGB(12, 13, 17),
+			"Motor_" .. i,
+			Vector3.new(0.7, 0.4, 0.7),
+			Color3.fromRGB(8, 9, 12),
 			Enum.Material.Metal
 		)
 
 		motor.CFrame =
-			droneCore.CFrame *
+			core.CFrame *
 			CFrame.new(offset)
 
-		weld(droneCore, motor)
+		weld(core, motor)
 
-		-- Rotor
-		local rotor = createPart(
+		--======================================================
+		-- ROTOR
+		--======================================================
+
+		local rotor = makePart(
 			drone,
-			"Rotor" .. i,
-			Vector3.new(2.2, 0.05, 0.18),
-			Color3.fromRGB(15, 16, 20),
+			"Rotor_" .. i,
+			Vector3.new(2.25, 0.06, 0.18),
+			Color3.fromRGB(12, 13, 16),
 			Enum.Material.SmoothPlastic
 		)
 
@@ -187,75 +283,165 @@ local function createDrone()
 
 		weld(motor, rotor)
 
+		table.insert(rotors, rotor)
+
+		-- zweites Rotorblatt
+		local rotor2 = makePart(
+			drone,
+			"RotorBlade_" .. i,
+			Vector3.new(0.18, 0.06, 2.25),
+			Color3.fromRGB(12, 13, 16),
+			Enum.Material.SmoothPlastic
+		)
+
+		rotor2.CFrame =
+			motor.CFrame
+
+		weld(motor, rotor2)
+
+		table.insert(rotors, rotor2)
+
 	end
 
-	-- LED-Leisten
-	for _, offset in ipairs({
-		Vector3.new(-1.25, 0.05, -1.55),
-		Vector3.new( 1.25, 0.05, -1.55)
-	}) do
+	--==========================================================
+	-- LEDS
+	--==========================================================
 
-		local led = createPart(
+	local ledPositions = {
+		Vector3.new(-1.25, 0.1, -1.4),
+		Vector3.new(1.25, 0.1, -1.4),
+		Vector3.new(-1.25, 0.1, 1.4),
+		Vector3.new(1.25, 0.1, 1.4)
+	}
+
+	for i, offset in ipairs(ledPositions) do
+
+		local led = makePart(
 			drone,
-			"LED",
-			Vector3.new(0.65, 0.08, 0.12),
+			"LED_" .. i,
+			Vector3.new(0.55, 0.1, 0.15),
 			Color3.fromRGB(0, 190, 255),
 			Enum.Material.Neon
 		)
 
 		led.CFrame =
-			droneCore.CFrame *
+			core.CFrame *
 			CFrame.new(offset)
 
-		weld(droneCore, led)
+		weld(core, led)
+
+		table.insert(leds, led)
 
 	end
 
-	-- Light
-	local lightPart = createPart(
+	--==========================================================
+	-- BOOST THRUSTERS
+	--==========================================================
+
+	for _, offset in ipairs({
+		Vector3.new(-1.0, -0.45, 0),
+		Vector3.new(1.0, -0.45, 0)
+	}) do
+
+		local thruster = makePart(
+			drone,
+			"Thruster",
+			Vector3.new(0.45, 0.18, 0.45),
+			Color3.fromRGB(20, 100, 255),
+			Enum.Material.Neon
+		)
+
+		thruster.CFrame =
+			core.CFrame *
+			CFrame.new(offset)
+
+		weld(core, thruster)
+
+		table.insert(thrusters, thruster)
+
+	end
+
+	--==========================================================
+	-- TRAINING LASER
+	--==========================================================
+
+	local laserEmitter = makePart(
 		drone,
-		"Spotlight",
-		Vector3.new(0.5, 0.15, 0.5),
-		Color3.fromRGB(230, 245, 255),
-		Enum.Material.Neon
+		"TrainingEmitter",
+		Vector3.new(0.5, 0.3, 0.65),
+		Color3.fromRGB(30, 30, 35),
+		Enum.Material.Metal
 	)
 
-	lightPart.CFrame =
-		droneCore.CFrame *
-		CFrame.new(0, -0.4, -1)
+	laserEmitter.CFrame =
+		core.CFrame *
+		CFrame.new(
+			0,
+			-0.25,
+			-1.9
+		)
 
-	weld(droneCore, lightPart)
+	weld(core, laserEmitter)
 
-	local light = Instance.new("SpotLight")
-	light.Brightness = 4
-	light.Range = 35
-	light.Angle = 70
-	light.Color = Color3.fromRGB(190, 235, 255)
-	light.Parent = lightPart
+	local emitterLight =
+		createLight(
+			laserEmitter,
+			Color3.fromRGB(255, 45, 45),
+			5,
+			1
+		)
 
-	-- Physik
-	local attachment = Instance.new("Attachment")
-	attachment.Parent = droneCore
+	--==========================================================
+	-- PHYSICS
+	--==========================================================
 
-	local velocity = Instance.new("LinearVelocity")
-	velocity.Attachment0 = attachment
-	velocity.MaxForce = math.huge
-	velocity.VectorVelocity = Vector3.zero
-	velocity.RelativeTo = Enum.ActuatorRelativeTo.World
-	velocity.Parent = droneCore
+	local attachment =
+		Instance.new("Attachment")
 
-	local angular = Instance.new("AngularVelocity")
-	angular.Attachment0 = attachment
-	angular.MaxTorque = math.huge
-	angular.AngularVelocity = Vector3.zero
-	angular.RelativeTo = Enum.ActuatorRelativeTo.Attachment0
-	angular.Parent = droneCore
+	attachment.Parent = core
 
-	return velocity, angular
+	velocityController =
+		Instance.new("LinearVelocity")
+
+	velocityController.Attachment0 =
+		attachment
+
+	velocityController.MaxForce =
+		math.huge
+
+	velocityController.RelativeTo =
+		Enum.ActuatorRelativeTo.World
+
+	velocityController.VectorVelocity =
+		Vector3.zero
+
+	velocityController.Parent =
+		core
+
+	angularController =
+		Instance.new("AngularVelocity")
+
+	angularController.Attachment0 =
+		attachment
+
+	angularController.MaxTorque =
+		math.huge
+
+	angularController.RelativeTo =
+		Enum.ActuatorRelativeTo.World
+
+	angularController.AngularVelocity =
+		Vector3.zero
+
+	angularController.Parent =
+		core
+
+	return drone
 end
 
-local velocityController
-local rotationController
+--==============================================================
+-- START
+--==============================================================
 
 local function startDrone()
 
@@ -265,36 +451,64 @@ local function startDrone()
 
 	flying = true
 
-	velocityController, rotationController =
-		createDrone()
+	local character = player.Character
+	local root =
+		character and
+		character:FindFirstChild("HumanoidRootPart")
 
-	camera.CameraType = Enum.CameraType.Scriptable
+	if root then
+		yaw =
+			math.atan2(
+				-root.CFrame.LookVector.X,
+				-root.CFrame.LookVector.Z
+			)
+	end
+
+	cameraYaw = yaw
+	cameraPitch = -0.15
+
+	createDrone()
+
+	camera.CameraType =
+		Enum.CameraType.Scriptable
+
+	UIS.MouseBehavior =
+		Enum.MouseBehavior.LockCenter
+
+	UIS.MouseIconEnabled = false
 
 end
 
-local function stopDrone()
+--==============================================================
+-- STOP
+--==============================================================
 
-	if not flying then
-		return
-	end
+local function stopDrone()
 
 	flying = false
 
 	if drone then
 		drone:Destroy()
-		drone = nil
 	end
 
-	droneCore = nil
+	drone = nil
+	core = nil
 
-	camera.CameraType = Enum.CameraType.Custom
+	camera.CameraType =
+		Enum.CameraType.Custom
+
+	UIS.MouseBehavior =
+		Enum.MouseBehavior.Default
+
+	UIS.MouseIconEnabled = true
 
 end
 
--- Start automatisch
-startDrone()
+--==============================================================
+-- INPUT
+--==============================================================
 
-UserInputService.InputBegan:Connect(function(input, processed)
+UIS.InputBegan:Connect(function(input, processed)
 
 	if processed then
 		return
@@ -302,153 +516,563 @@ UserInputService.InputBegan:Connect(function(input, processed)
 
 	if input.KeyCode == Enum.KeyCode.W then
 		keys.W = true
+
 	elseif input.KeyCode == Enum.KeyCode.S then
 		keys.S = true
+
 	elseif input.KeyCode == Enum.KeyCode.A then
 		keys.A = true
+
 	elseif input.KeyCode == Enum.KeyCode.D then
 		keys.D = true
+
 	elseif input.KeyCode == Enum.KeyCode.Space then
 		keys.Up = true
+
 	elseif input.KeyCode == Enum.KeyCode.LeftControl then
 		keys.Down = true
+
 	elseif input.KeyCode == Enum.KeyCode.LeftShift then
 		keys.Boost = true
+
+	elseif input.KeyCode == Enum.KeyCode.F then
+		firing = true
+
 	elseif input.KeyCode == Enum.KeyCode.Q then
 		stopDrone()
+
+	elseif input.KeyCode == Enum.KeyCode.R then
+
+		if not flying then
+			startDrone()
+		end
+
 	end
 
 end)
 
-UserInputService.InputEnded:Connect(function(input)
+UIS.InputEnded:Connect(function(input)
 
 	if input.KeyCode == Enum.KeyCode.W then
 		keys.W = false
+
 	elseif input.KeyCode == Enum.KeyCode.S then
 		keys.S = false
+
 	elseif input.KeyCode == Enum.KeyCode.A then
 		keys.A = false
+
 	elseif input.KeyCode == Enum.KeyCode.D then
 		keys.D = false
+
 	elseif input.KeyCode == Enum.KeyCode.Space then
 		keys.Up = false
+
 	elseif input.KeyCode == Enum.KeyCode.LeftControl then
 		keys.Down = false
+
 	elseif input.KeyCode == Enum.KeyCode.LeftShift then
 		keys.Boost = false
+
+	elseif input.KeyCode == Enum.KeyCode.F then
+		firing = false
+
 	end
 
 end)
 
-local smoothVelocity = Vector3.zero
-local smoothTilt = Vector3.zero
+--==============================================================
+-- FREE CAMERA
+--==============================================================
 
-RunService.RenderStepped:Connect(function(dt)
+UIS.InputChanged:Connect(function(input)
 
 	if not flying then
 		return
 	end
 
-	if not droneCore or not droneCore.Parent then
+	if input.UserInputType ==
+		Enum.UserInputType.MouseMovement then
+
+		cameraYaw -=
+			input.Delta.X *
+			MOUSE_SENSITIVITY
+
+		cameraPitch -=
+			input.Delta.Y *
+			MOUSE_SENSITIVITY
+
+		cameraPitch =
+			math.clamp(
+				cameraPitch,
+				-1.15,
+				0.9
+			)
+
+	end
+
+end)
+
+--==============================================================
+-- TRAINING LASER
+--==============================================================
+
+local lastShot = 0
+local shotCooldown = 0.12
+
+local function fireTrainingLaser()
+
+	if not core then
 		return
 	end
 
-	-- Bewegungsrichtung
-	local move = Vector3.zero
+	local now = os.clock()
+
+	if now - lastShot < shotCooldown then
+		return
+	end
+
+	lastShot = now
+
+	-- Mündungsposition
+	local origin =
+		core.Position +
+		core.CFrame.LookVector * -1.9 +
+		Vector3.new(0, -0.25, 0)
+
+	local direction =
+		core.CFrame.LookVector * -350
+
+	-- Laser-Effekt
+	local distance = 350
+
+	local beam =
+		Instance.new("Part")
+
+	beam.Name =
+		"TrainingLaser"
+
+	beam.Anchored = true
+	beam.CanCollide = false
+	beam.CanTouch = false
+	beam.CanQuery = false
+
+	beam.Material =
+		Enum.Material.Neon
+
+	beam.Color =
+		Color3.fromRGB(
+			255,
+			45,
+			55
+		)
+
+	beam.Size =
+		Vector3.new(
+			0.08,
+			0.08,
+			distance
+		)
+
+	beam.CFrame =
+		CFrame.lookAt(
+			origin,
+			origin + direction
+		) *
+		CFrame.new(
+			0,
+			0,
+			-distance/2
+		)
+
+	beam.Parent =
+		workspace
+
+	Debris:AddItem(
+		beam,
+		0.055
+	)
+
+	--==========================================================
+	-- MUZZLE FLASH
+	--==========================================================
+
+	local flash =
+		Instance.new("Part")
+
+	flash.Anchored = true
+	flash.CanCollide = false
+	flash.CanTouch = false
+	flash.CanQuery = false
+
+	flash.Shape =
+		Enum.PartType.Ball
+
+	flash.Size =
+		Vector3.new(
+			0.9,
+			0.9,
+			0.9
+		)
+
+	flash.Material =
+		Enum.Material.Neon
+
+	flash.Color =
+		Color3.fromRGB(
+			255,
+			180,
+			60
+		)
+
+	flash.CFrame =
+		CFrame.new(
+			origin
+		)
+
+	flash.Parent =
+		workspace
+
+	Debris:AddItem(
+		flash,
+		0.07
+	)
+
+	--==========================================================
+	-- RECOIL
+	--==========================================================
+
+	core.AssemblyLinearVelocity +=
+		-core.CFrame.LookVector * 2
+
+end
+
+--==============================================================
+-- DRONE ANIMATION
+--==============================================================
+
+local rotorAngle = 0
+local hoverTime = 0
+
+local function animateDrone(dt)
+
+	if not flying or not core then
+		return
+	end
+
+	hoverTime += dt
+
+	--==========================================================
+	-- ROTORS
+	--==========================================================
+
+	rotorAngle +=
+		dt *
+		(
+			keys.Boost
+			and 55
+			or 35
+		)
+
+	for i, rotor in ipairs(rotors) do
+
+		if rotor and rotor.Parent then
+
+			local angle =
+				rotorAngle *
+				(i % 2 == 0 and -1 or 1)
+
+			rotor.CFrame =
+				rotor.CFrame *
+				CFrame.Angles(
+					0,
+					angle,
+					0
+				)
+
+		end
+
+	end
+
+	--==========================================================
+	-- LED ANIMATION
+	--==========================================================
+
+	local pulse =
+		(
+			math.sin(
+				hoverTime * 6
+			) + 1
+		) / 2
+
+	for i, led in ipairs(leds) do
+
+		if led and led.Parent then
+
+			if i % 2 == 0 then
+
+				led.Color =
+					Color3.fromRGB(
+						0,
+						100 + pulse * 155,
+						255
+					)
+
+			else
+
+				led.Color =
+					Color3.fromRGB(
+						255,
+						40 + pulse * 100,
+						60
+					)
+
+			end
+
+		end
+
+	end
+
+	--==========================================================
+	-- BOOST EFFECT
+	--==========================================================
+
+	for _, thruster in ipairs(thrusters) do
+
+		if keys.Boost then
+
+			thruster.Color =
+				Color3.fromRGB(
+					60,
+					170,
+					255
+				)
+
+		else
+
+			thruster.Color =
+				Color3.fromRGB(
+					20,
+					70,
+					130
+				)
+
+		end
+
+	end
+
+end
+
+--==============================================================
+-- FLIGHT PHYSICS
+--==============================================================
+
+local function updateFlight(dt)
+
+	if not flying then
+		return
+	end
+
+	if not core then
+		return
+	end
+
+	local movement =
+		Vector3.zero
 
 	if keys.W then
-		move += Vector3.new(0, 0, -1)
+		movement += Vector3.new(0,0,-1)
 	end
 
 	if keys.S then
-		move += Vector3.new(0, 0, 1)
+		movement += Vector3.new(0,0,1)
 	end
 
 	if keys.A then
-		move += Vector3.new(-1, 0, 0)
+		movement += Vector3.new(-1,0,0)
 	end
 
 	if keys.D then
-		move += Vector3.new(1, 0, 0)
+		movement += Vector3.new(1,0,0)
 	end
 
 	if keys.Up then
-		move += Vector3.new(0, 1, 0)
+		movement += Vector3.new(0,1,0)
 	end
 
 	if keys.Down then
-		move += Vector3.new(0, -1, 0)
+		movement += Vector3.new(0,-1,0)
 	end
 
-	if move.Magnitude > 0 then
-		move = move.Unit
+	if movement.Magnitude > 0 then
+		movement = movement.Unit
 	end
 
-	local currentSpeed =
-		keys.Boost and boostSpeed or speed
+	--==========================================================
+	-- CAMERA RELATIVE MOVEMENT
+	--==========================================================
 
-	local desired =
-		droneCore.CFrame:VectorToWorldSpace(move)
-		* currentSpeed
-
-	-- weiches Schweben
-	smoothVelocity =
-		smoothVelocity:Lerp(
-			desired,
-			math.clamp(dt * 5, 0, 1)
-		)
-
-	velocityController.VectorVelocity =
-		smoothVelocity
-
-	-- Neigung
-	local pitch = 0
-	local roll = 0
-
-	if keys.W then
-		pitch = math.rad(-12)
-	elseif keys.S then
-		pitch = math.rad(12)
-	end
-
-	if keys.A then
-		roll = math.rad(14)
-	elseif keys.D then
-		roll = math.rad(-14)
-	end
-
-	smoothTilt =
-		smoothTilt:Lerp(
-			Vector3.new(
-				pitch,
-				0,
-				roll
-			),
-			math.clamp(dt * 7, 0, 1)
-		)
-
-	-- Drohnenrotation
-	rotationController.AngularVelocity =
-		Vector3.new(
+	local cameraCF =
+		CFrame.Angles(
 			0,
-			(keys.A and 0.7 or 0) +
-			(keys.D and -0.7 or 0),
+			cameraYaw,
 			0
 		)
 
-	-- Kamera hinter der Drohne
-	local camDistance = keys.Boost and 13 or 10
+	local horizontal =
+		cameraCF:VectorToWorldSpace(
+			Vector3.new(
+				movement.X,
+				0,
+				movement.Z
+			)
+		)
+
+	local vertical =
+		movement.Y *
+		VERTICAL_SPEED
+
+	local maxSpeed =
+		keys.Boost
+		and BOOST_SPEED
+		or NORMAL_SPEED
+
+	local targetVelocity =
+		horizontal * maxSpeed
+
+	targetVelocity =
+		Vector3.new(
+			targetVelocity.X,
+			vertical,
+			targetVelocity.Z
+		)
+
+	currentVelocity =
+		currentVelocity:Lerp(
+			targetVelocity,
+			math.clamp(
+				dt * 5,
+				0,
+				1
+			)
+		)
+
+	velocityController.VectorVelocity =
+		currentVelocity
+
+	--==========================================================
+	-- DRONE YAW
+	--==========================================================
+
+	local targetYaw =
+		cameraYaw
+
+	yaw +=
+		(targetYaw - yaw) *
+		math.clamp(
+			dt * 5,
+			0,
+			1
+		)
+
+	--==========================================================
+	-- TILT
+	--==========================================================
+
+	local forwardInput = 0
+	local sideInput = 0
+
+	if keys.W then
+		forwardInput = 1
+	elseif keys.S then
+		forwardInput = -1
+	end
+
+	if keys.A then
+		sideInput = -1
+	elseif keys.D then
+		sideInput = 1
+	end
+
+	local pitchTilt =
+		math.rad(
+			-12 *
+			forwardInput
+		)
+
+	local rollTilt =
+		math.rad(
+			-15 *
+			sideInput
+		)
+
+	local targetCF =
+		CFrame.new(
+			core.Position
+		) *
+		CFrame.Angles(
+			pitchTilt,
+			yaw,
+			rollTilt
+		)
+
+	-- Rotation sanft simulieren
+	local targetLook =
+		targetCF.LookVector
+
+	local desiredAngular =
+		Vector3.new(
+			0,
+			(yaw -
+				core.Orientation.Y *
+				math.pi / 180) * 4,
+			0
+		)
+
+	angularController.AngularVelocity =
+		desiredAngular
+
+end
+
+--==============================================================
+-- CAMERA UPDATE
+--==============================================================
+
+local function updateCamera(dt)
+
+	if not flying or not core then
+		return
+	end
+
+	local rotation =
+		CFrame.Angles(
+			0,
+			cameraYaw,
+			0
+		) *
+		CFrame.Angles(
+			cameraPitch,
+			0,
+			0
+		)
+
+	local cameraDirection =
+		rotation.LookVector
 
 	local cameraPosition =
-		droneCore.Position
-		- droneCore.CFrame.LookVector * camDistance
-		+ Vector3.new(0, 5, 0)
+		core.Position
+		- cameraDirection * CAMERA_DISTANCE
+		+ Vector3.new(
+			0,
+			CAMERA_HEIGHT,
+			0
+		)
 
 	local target =
-		droneCore.Position
-		+ droneCore.CFrame.LookVector * 8
+		core.Position +
+		cameraDirection * 8
 
-	local desiredCamera =
+	local wanted =
 		CFrame.lookAt(
 			cameraPosition,
 			target
@@ -456,8 +1080,34 @@ RunService.RenderStepped:Connect(function(dt)
 
 	camera.CFrame =
 		camera.CFrame:Lerp(
-			desiredCamera,
-			math.clamp(dt * 8, 0, 1)
+			wanted,
+			math.clamp(
+				dt * CAMERA_SMOOTH,
+				0,
+				1
+			)
 		)
+
+end
+
+--==============================================================
+-- MAIN LOOP
+--==============================================================
+
+startDrone()
+
+RunService.RenderStepped:Connect(function(dt)
+
+	if not flying then
+		return
+	end
+
+	updateFlight(dt)
+	updateCamera(dt)
+	animateDrone(dt)
+
+	if firing then
+		fireTrainingLaser()
+	end
 
 end)
