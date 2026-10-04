@@ -1,300 +1,52 @@
---[[
-==============================================================
-        NEON MOTORS - LOCAL VEHICLE GARAGE
-        ONE LOCALSCRIPT
-==============================================================
-
-CONTROLS
-W / S       Drive / Reverse
-A / D       Steering
-SHIFT       Drift
-SPACE       Handbrake
-R           Reset
-M           Garage
-ESC         Release camera
-
-FEATURES
-- 10 custom vehicles
-- 3D preview viewport
-- DRIVE button
-- Local vehicle physics
-- Drift
-- Handbrake
-- Speedometer
-- Different handling
-- Custom test area
-- Detailed vehicle bodies
-==============================================================
-]]
+-- DRONE CONTROLLER
+-- W/S = vor/zurück
+-- A/D = links/rechts
+-- Space = hoch
+-- LeftControl = runter
+-- Shift = Boost
+-- Q = Drohne verlassen
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local UIS = game:GetService("UserInputService")
-local Lighting = game:GetService("Lighting")
+local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui")
+local camera = workspace.CurrentCamera
 
---==============================================================
--- CONFIG
---==============================================================
-
-local WORLD_POS = Vector3.new(2500, 50, 2500)
-
-local selectedName = nil
-local selectedConfig = nil
-
-local activeVehicle = nil
-local activeBody = nil
-local activeSeat = nil
-
-local driving = false
-local garageOpen = true
+local flying = false
+local drone
+local droneCore
 
 local keys = {
 	W = false,
 	S = false,
 	A = false,
 	D = false,
-	Shift = false,
-	Space = false,
+	Up = false,
+	Down = false,
+	Boost = false
 }
 
---==============================================================
--- VEHICLE DATABASE
---==============================================================
+local speed = 55
+local boostSpeed = 100
+local verticalSpeed = 38
 
-local Vehicles = {
-
-	{
-		Name = "Apex GT",
-		Type = "Supercar",
-		Color = Color3.fromRGB(225, 35, 45),
-		Accent = Color3.fromRGB(18, 18, 20),
-		Speed = 190,
-		Acceleration = 115,
-		Braking = 140,
-		Grip = 0.91,
-		DriftGrip = 0.18,
-		Steering = 2.3,
-		Width = 7.4,
-		Length = 17.2,
-		Height = 2.7,
-		Wheel = 1.35,
-	},
-
-	{
-		Name = "Vortex R",
-		Type = "Hypercar",
-		Color = Color3.fromRGB(35, 75, 235),
-		Accent = Color3.fromRGB(10, 15, 25),
-		Speed = 225,
-		Acceleration = 145,
-		Braking = 160,
-		Grip = 0.94,
-		DriftGrip = 0.20,
-		Steering = 2.1,
-		Width = 7.6,
-		Length = 18,
-		Height = 2.45,
-		Wheel = 1.38,
-	},
-
-	{
-		Name = "Phantom S",
-		Type = "Sports",
-		Color = Color3.fromRGB(25, 25, 28),
-		Accent = Color3.fromRGB(180, 180, 190),
-		Speed = 175,
-		Acceleration = 100,
-		Braking = 130,
-		Grip = 0.87,
-		DriftGrip = 0.16,
-		Steering = 2.4,
-		Width = 7.3,
-		Length = 16.5,
-		Height = 2.8,
-		Wheel = 1.32,
-	},
-
-	{
-		Name = "Neon RS",
-		Type = "Sports",
-		Color = Color3.fromRGB(145, 35, 215),
-		Accent = Color3.fromRGB(25, 10, 30),
-		Speed = 165,
-		Acceleration = 92,
-		Braking = 125,
-		Grip = 0.84,
-		DriftGrip = 0.14,
-		Steering = 2.55,
-		Width = 7.1,
-		Length = 16,
-		Height = 2.75,
-		Wheel = 1.30,
-	},
-
-	{
-		Name = "Executive",
-		Type = "Sedan",
-		Color = Color3.fromRGB(45, 48, 55),
-		Accent = Color3.fromRGB(12, 13, 15),
-		Speed = 135,
-		Acceleration = 65,
-		Braking = 105,
-		Grip = 0.82,
-		DriftGrip = 0.35,
-		Steering = 2.0,
-		Width = 7.2,
-		Length = 16.5,
-		Height = 3.25,
-		Wheel = 1.28,
-	},
-
-	{
-		Name = "Nightline",
-		Type = "Sedan",
-		Color = Color3.fromRGB(15, 65, 100),
-		Accent = Color3.fromRGB(12, 14, 18),
-		Speed = 145,
-		Acceleration = 70,
-		Braking = 110,
-		Grip = 0.84,
-		DriftGrip = 0.29,
-		Steering = 2.05,
-		Width = 7.2,
-		Length = 16.2,
-		Height = 3.15,
-		Wheel = 1.28,
-	},
-
-	{
-		Name = "Titan X",
-		Type = "SUV",
-		Color = Color3.fromRGB(45, 105, 65),
-		Accent = Color3.fromRGB(18, 20, 18),
-		Speed = 120,
-		Acceleration = 55,
-		Braking = 110,
-		Grip = 0.78,
-		DriftGrip = 0.42,
-		Steering = 1.65,
-		Width = 8,
-		Length = 17,
-		Height = 4.3,
-		Wheel = 1.5,
-	},
-
-	{
-		Name = "Ranger",
-		Type = "Pickup",
-		Color = Color3.fromRGB(190, 85, 25),
-		Accent = Color3.fromRGB(25, 25, 25),
-		Speed = 125,
-		Acceleration = 52,
-		Braking = 105,
-		Grip = 0.75,
-		DriftGrip = 0.38,
-		Steering = 1.7,
-		Width = 8,
-		Length = 18,
-		Height = 4.1,
-		Wheel = 1.48,
-	},
-
-	{
-		Name = "Circuit X",
-		Type = "Race",
-		Color = Color3.fromRGB(245, 245, 245),
-		Accent = Color3.fromRGB(210, 25, 35),
-		Speed = 205,
-		Acceleration = 125,
-		Braking = 155,
-		Grip = 0.96,
-		DriftGrip = 0.24,
-		Steering = 2.5,
-		Width = 7.5,
-		Length = 18,
-		Height = 2.35,
-		Wheel = 1.4,
-	},
-
-	{
-		Name = "Streetbike",
-		Type = "Motorcycle",
-		Color = Color3.fromRGB(220, 30, 35),
-		Accent = Color3.fromRGB(15, 15, 18),
-		Speed = 175,
-		Acceleration = 105,
-		Braking = 145,
-		Grip = 0.88,
-		DriftGrip = 0.15,
-		Steering = 3.1,
-		Width = 2.7,
-		Length = 8.4,
-		Height = 2.8,
-		Wheel = 1.25,
-	},
-
-}
-
---==============================================================
--- FOLDERS
---==============================================================
-
-local oldWorld = workspace:FindFirstChild("NeonMotorsLocal")
-
-if oldWorld then
-	oldWorld:Destroy()
-end
-
-local World = Instance.new("Folder")
-World.Name = "NeonMotorsLocal"
-World.Parent = workspace
-
-local Track = Instance.new("Folder")
-Track.Name = "Track"
-Track.Parent = World
-
-local VehiclesFolder = Instance.new("Folder")
-VehiclesFolder.Name = "Vehicles"
-VehiclesFolder.Parent = World
-
---==============================================================
--- HELPERS
---==============================================================
-
-local function part(
-	parent,
-	name,
-	size,
-	cf,
-	color,
-	material,
-	anchored,
-	canCollide
-)
+local function createPart(parent, name, size, color, material)
 	local p = Instance.new("Part")
-
 	p.Name = name
 	p.Size = size
-	p.CFrame = cf
 	p.Color = color
 	p.Material = material or Enum.Material.SmoothPlastic
-	p.Anchored = anchored ~= false
-	p.CanCollide = canCollide ~= false
+	p.CanCollide = false
 	p.CanTouch = false
-	p.CanQuery = true
-
-	p.TopSurface = Enum.SurfaceType.Smooth
-	p.BottomSurface = Enum.SurfaceType.Smooth
-
+	p.CanQuery = false
+	p.Massless = true
+	p.Anchored = false
 	p.Parent = parent
-
 	return p
 end
 
-local function weld(a,b)
+local function weld(a, b)
 	local w = Instance.new("WeldConstraint")
 	w.Part0 = a
 	w.Part1 = b
@@ -302,1489 +54,249 @@ local function weld(a,b)
 	return w
 end
 
-local function childPart(
-	parent,
-	name,
-	size,
-	cf,
-	color,
-	material
-)
-	return part(
-		parent,
-		name,
-		size,
-		cf,
-		color,
-		material,
-		false,
-		false
-	)
-end
+local function createDrone()
 
---==============================================================
--- TRACK
---==============================================================
-
-local function BuildTrack()
-
-	local base = part(
-		Track,
-		"Ground",
-		Vector3.new(1500,20,1500),
-		CFrame.new(WORLD_POS),
-		Color3.fromRGB(58,60,63),
-		Enum.Material.Concrete,
-		true,
-		true
-	)
-
-	local road = part(
-		Track,
-		"MainRoad",
-		Vector3.new(1150,1,120),
-		CFrame.new(
-			WORLD_POS.X,
-			WORLD_POS.Y + 10,
-			WORLD_POS.Z
-		),
-		Color3.fromRGB(28,29,32),
-		Enum.Material.Asphalt,
-		true,
-		true
-	)
-
-	local road2 = part(
-		Track,
-		"CrossRoad",
-		Vector3.new(120,1,800),
-		CFrame.new(
-			WORLD_POS.X + 300,
-			WORLD_POS.Y + 10,
-			WORLD_POS.Z
-		),
-		Color3.fromRGB(28,29,32),
-		Enum.Material.Asphalt,
-		true,
-		true
-	)
-
-	local drift = part(
-		Track,
-		"DriftZone",
-		Vector3.new(420,1,420),
-		CFrame.new(
-			WORLD_POS.X - 330,
-			WORLD_POS.Y + 10,
-			WORLD_POS.Z + 270
-		),
-		Color3.fromRGB(34,35,38),
-		Enum.Material.Asphalt,
-		true,
-		true
-	)
-
-	-- lane markers
-
-	for i = -12,12 do
-		part(
-			Track,
-			"Lane",
-			Vector3.new(35,.12,2),
-			CFrame.new(
-				WORLD_POS.X + i*45,
-				WORLD_POS.Y + 10.6,
-				WORLD_POS.Z
-			),
-			Color3.fromRGB(235,235,205),
-			Enum.Material.Neon,
-			true,
-			false
-		)
+	if drone then
+		drone:Destroy()
 	end
 
-	-- drift ring
+	drone = Instance.new("Model")
+	drone.Name = "PlayerDrone"
+	drone.Parent = workspace
 
-	for i = 1,36 do
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
 
-		local a = math.rad(i*10)
+	local spawnPosition =
+		root and
+		(root.Position + Vector3.new(0, 8, -4))
+		or Vector3.new(0, 20, 0)
 
-		local x = math.cos(a)*145
-		local z = math.sin(a)*145
-
-		local mark = part(
-			Track,
-			"DriftMark",
-			Vector3.new(25,.1,2),
-			CFrame.new(
-				WORLD_POS.X-330+x,
-				WORLD_POS.Y+10.7,
-				WORLD_POS.Z+270+z
-			) *
-			CFrame.Angles(
-				0,
-				-a,
-				0
-			),
-			Color3.fromRGB(210,210,210),
-			Enum.Material.Neon,
-			true,
-			false
-		)
-	end
-
-	-- start grid
-
-	for i=0,7 do
-
-		local x = WORLD_POS.X - 150 + i*42
-
-		part(
-			Track,
-			"Grid",
-			Vector3.new(2,.15,80),
-			CFrame.new(
-				x,
-				WORLD_POS.Y+10.8,
-				WORLD_POS.Z
-			),
-			Color3.fromRGB(255,255,255),
-			Enum.Material.Neon,
-			true,
-			false
-		)
-	end
-
-	-- barriers
-
-	for i=-8,8 do
-
-		part(
-			Track,
-			"Barrier",
-			Vector3.new(3,3,18),
-			CFrame.new(
-				WORLD_POS.X+i*55,
-				WORLD_POS.Y+13,
-				WORLD_POS.Z+65
-			),
-			Color3.fromRGB(220,35,35),
-			Enum.Material.Metal,
-			true,
-			true
-		)
-
-	end
-
-end
-
-BuildTrack()
-
---==============================================================
--- VEHICLE MATERIAL HELPERS
---==============================================================
-
-local function glass(parent,name,size,cf)
-
-	local g = childPart(
-		parent,
-		name,
-		size,
-		cf,
-		Color3.fromRGB(35,75,105),
-		Enum.Material.Glass
+	droneCore = createPart(
+		drone,
+		"DroneCore",
+		Vector3.new(3, 0.65, 3),
+		Color3.fromRGB(20, 23, 30),
+		Enum.Material.Metal
 	)
 
-	g.Transparency = .22
+	droneCore.CFrame =
+		CFrame.new(spawnPosition)
 
-	return g
-end
+	drone.PrimaryPart = droneCore
 
-local function light(parent,name,size,cf,color)
+	-- obere Platte
+	local top = createPart(
+		drone,
+		"Top",
+		Vector3.new(2.2, 0.25, 2.2),
+		Color3.fromRGB(45, 48, 58),
+		Enum.Material.Metal
+	)
 
-	return childPart(
-		parent,
-		name,
-		size,
-		cf,
-		color,
+	top.CFrame =
+		droneCore.CFrame *
+		CFrame.new(0, 0.45, 0)
+
+	weld(droneCore, top)
+
+	-- Kamera
+	local cameraMount = createPart(
+		drone,
+		"CameraMount",
+		Vector3.new(1.15, 0.65, 0.55),
+		Color3.fromRGB(8, 10, 13),
+		Enum.Material.Metal
+	)
+
+	cameraMount.CFrame =
+		droneCore.CFrame *
+		CFrame.new(0, -0.05, -1.55)
+
+	weld(droneCore, cameraMount)
+
+	-- Kamera-Linse
+	local lens = createPart(
+		drone,
+		"CameraLens",
+		Vector3.new(0.65, 0.42, 0.15),
+		Color3.fromRGB(20, 120, 190),
 		Enum.Material.Neon
 	)
 
-end
+	lens.CFrame =
+		cameraMount.CFrame *
+		CFrame.new(0, 0, -0.35)
 
---==============================================================
--- WHEEL
---==============================================================
+	weld(cameraMount, lens)
 
-local function AddWheel(
-	model,
-	chassis,
-	name,
-	offset,
-	radius
-)
+	-- Arme
+	local armPositions = {
+		Vector3.new( 2.0, 0,  2.0),
+		Vector3.new(-2.0, 0,  2.0),
+		Vector3.new( 2.0, 0, -2.0),
+		Vector3.new(-2.0, 0, -2.0),
+	}
 
-	local wheel = Instance.new("Part")
+	for i, offset in ipairs(armPositions) do
 
-	wheel.Name = name
-	wheel.Shape = Enum.PartType.Cylinder
-
-	wheel.Size = Vector3.new(
-		1.1,
-		radius*2,
-		radius*2
-	)
-
-	wheel.Color = Color3.fromRGB(8,8,10)
-	wheel.Material = Enum.Material.Rubber
-
-	wheel.CanCollide = false
-	wheel.CanTouch = false
-	wheel.CanQuery = false
-	wheel.Massless = true
-
-	wheel.CFrame =
-		chassis.CFrame *
-		CFrame.new(offset) *
-		CFrame.Angles(0,0,math.rad(90))
-
-	wheel.Parent = model
-
-	weld(chassis,wheel)
-
-	local rim = Instance.new("Part")
-
-	rim.Name = "Rim"
-	rim.Shape = Enum.PartType.Cylinder
-
-	rim.Size = Vector3.new(
-		1.15,
-		radius*1.25,
-		radius*1.25
-	)
-
-	rim.Color = Color3.fromRGB(180,180,185)
-	rim.Material = Enum.Material.Metal
-
-	rim.CanCollide = false
-	rim.CanTouch = false
-	rim.CanQuery = false
-	rim.Massless = true
-
-	rim.CFrame = wheel.CFrame
-	rim.Parent = model
-
-	weld(wheel,rim)
-
-	return wheel
-end
-
---==============================================================
--- CAR BODY
---==============================================================
-
-local function CreateCar(cfg)
-
-	local model = Instance.new("Model")
-	model.Name = cfg.Name
-	model.Parent = VehiclesFolder
-
-	local chassis = childPart(
-		model,
-		"Chassis",
-		Vector3.new(
-			cfg.Width,
-			cfg.Height,
-			cfg.Length
-		),
-		CFrame.new(
-			WORLD_POS.X,
-			WORLD_POS.Y+20,
-			WORLD_POS.Z
-		),
-		cfg.Color,
-		Enum.Material.Metal
-	)
-
-	model.PrimaryPart = chassis
-
-	chassis.CustomPhysicalProperties =
-		PhysicalProperties.new(
-			1,
-			0.8,
-			0.05,
-			1,
-			1
+		local arm = createPart(
+			drone,
+			"Arm" .. i,
+			Vector3.new(2.4, 0.22, 0.22),
+			Color3.fromRGB(35, 38, 45),
+			Enum.Material.Metal
 		)
 
-	-- lower side skirts
-
-	for _,x in ipairs({
-		-cfg.Width*.48,
-		cfg.Width*.48
-	}) do
-
-		local skirt = childPart(
-			model,
-			"SideSkirt",
-			Vector3.new(
-				.3,
-				cfg.Height*.55,
-				cfg.Length*.65
-			),
-			chassis.CFrame *
-			CFrame.new(
-				x,
-				-.05,
+		arm.CFrame =
+			droneCore.CFrame *
+			CFrame.new(offset/2) *
+			CFrame.Angles(
+				0,
+				math.rad(45),
 				0
-			),
-			cfg.Accent,
+			)
+
+		weld(droneCore, arm)
+
+		local motor = createPart(
+			drone,
+			"Motor" .. i,
+			Vector3.new(0.65, 0.35, 0.65),
+			Color3.fromRGB(12, 13, 17),
+			Enum.Material.Metal
+		)
+
+		motor.CFrame =
+			droneCore.CFrame *
+			CFrame.new(offset)
+
+		weld(droneCore, motor)
+
+		-- Rotor
+		local rotor = createPart(
+			drone,
+			"Rotor" .. i,
+			Vector3.new(2.2, 0.05, 0.18),
+			Color3.fromRGB(15, 16, 20),
 			Enum.Material.SmoothPlastic
 		)
 
-		weld(chassis,skirt)
+		rotor.CFrame =
+			motor.CFrame
+
+		weld(motor, rotor)
 
 	end
 
-	-- hood
-
-	local hood = childPart(
-		model,
-		"Hood",
-		Vector3.new(
-			cfg.Width*.82,
-			cfg.Height*.42,
-			cfg.Length*.30
-		),
-		chassis.CFrame *
-		CFrame.new(
-			0,
-			cfg.Height*.47,
-			cfg.Length*.32
-		),
-		cfg.Color,
-		Enum.Material.SmoothPlastic
-	)
-
-	weld(chassis,hood)
-
-	-- roof
-
-	local roof = childPart(
-		model,
-		"Roof",
-		Vector3.new(
-			cfg.Width*.66,
-			cfg.Height*.8,
-			cfg.Length*.40
-		),
-		chassis.CFrame *
-		CFrame.new(
-			0,
-			cfg.Height*.75,
-			-.35
-		),
-		cfg.Accent,
-		Enum.Material.SmoothPlastic
-	)
-
-	weld(chassis,roof)
-
-	-- windshield
-
-	local windshield = glass(
-		model,
-		"FrontGlass",
-		Vector3.new(
-			cfg.Width*.58,
-			cfg.Height*.58,
-			.12
-		),
-		roof.CFrame *
-		CFrame.new(
-			0,
-			.05,
-			cfg.Length*.20
-		)
-	)
-
-	weld(roof,windshield)
-
-	-- rear glass
-
-	local rearGlass = glass(
-		model,
-		"RearGlass",
-		Vector3.new(
-			cfg.Width*.58,
-			cfg.Height*.52,
-			.12
-		),
-		roof.CFrame *
-		CFrame.new(
-			0,
-			.05,
-			-cfg.Length*.20
-		)
-	)
-
-	weld(roof,rearGlass)
-
-	-- side windows
-
-	for _,x in ipairs({
-		-cfg.Width*.335,
-		cfg.Width*.335
+	-- LED-Leisten
+	for _, offset in ipairs({
+		Vector3.new(-1.25, 0.05, -1.55),
+		Vector3.new( 1.25, 0.05, -1.55)
 	}) do
 
-		local window = glass(
-			model,
-			"SideWindow",
-			Vector3.new(
-				.08,
-				cfg.Height*.5,
-				cfg.Length*.30
-			),
-			roof.CFrame *
-			CFrame.new(
-				x,
-				.05,
-				0
-			)
+		local led = createPart(
+			drone,
+			"LED",
+			Vector3.new(0.65, 0.08, 0.12),
+			Color3.fromRGB(0, 190, 255),
+			Enum.Material.Neon
 		)
 
-		weld(roof,window)
+		led.CFrame =
+			droneCore.CFrame *
+			CFrame.new(offset)
+
+		weld(droneCore, led)
 
 	end
 
-	-- mirrors
-
-	for _,x in ipairs({
-		-cfg.Width*.52,
-		cfg.Width*.52
-	}) do
-
-		local mirror = childPart(
-			model,
-			"Mirror",
-			Vector3.new(
-				.55,
-				.35,
-				.85
-			),
-			chassis.CFrame *
-			CFrame.new(
-				x,
-				cfg.Height*.65,
-				cfg.Length*.12
-			),
-			cfg.Accent,
-			Enum.Material.Metal
-		)
-
-		weld(chassis,mirror)
-
-	end
-
-	-- wheels
-
-	local wx = cfg.Width/2+.05
-	local wz = cfg.Length*.31
-	local wy = -cfg.Height*.42
-
-	AddWheel(
-		model,
-		chassis,
-		"FrontLeft",
-		Vector3.new(-wx,wy,wz),
-		cfg.Wheel
+	-- Light
+	local lightPart = createPart(
+		drone,
+		"Spotlight",
+		Vector3.new(0.5, 0.15, 0.5),
+		Color3.fromRGB(230, 245, 255),
+		Enum.Material.Neon
 	)
 
-	AddWheel(
-		model,
-		chassis,
-		"FrontRight",
-		Vector3.new(wx,wy,wz),
-		cfg.Wheel
-	)
+	lightPart.CFrame =
+		droneCore.CFrame *
+		CFrame.new(0, -0.4, -1)
 
-	AddWheel(
-		model,
-		chassis,
-		"RearLeft",
-		Vector3.new(-wx,wy,-wz),
-		cfg.Wheel
-	)
+	weld(droneCore, lightPart)
 
-	AddWheel(
-		model,
-		chassis,
-		"RearRight",
-		Vector3.new(wx,wy,-wz),
-		cfg.Wheel
-	)
+	local light = Instance.new("SpotLight")
+	light.Brightness = 4
+	light.Range = 35
+	light.Angle = 70
+	light.Color = Color3.fromRGB(190, 235, 255)
+	light.Parent = lightPart
 
-	-- headlights
+	-- Physik
+	local attachment = Instance.new("Attachment")
+	attachment.Parent = droneCore
 
-	for _,x in ipairs({
-		-cfg.Width*.27,
-		cfg.Width*.27
-	}) do
+	local velocity = Instance.new("LinearVelocity")
+	velocity.Attachment0 = attachment
+	velocity.MaxForce = math.huge
+	velocity.VectorVelocity = Vector3.zero
+	velocity.RelativeTo = Enum.ActuatorRelativeTo.World
+	velocity.Parent = droneCore
 
-		local h = light(
-			model,
-			"Headlight",
-			Vector3.new(
-				1.4,
-				.48,
-				.18
-			),
-			chassis.CFrame *
-			CFrame.new(
-				x,
-				.05,
-				cfg.Length/2+.05
-			),
-			Color3.fromRGB(
-				255,
-				245,
-				205
-			)
-		)
+	local angular = Instance.new("AngularVelocity")
+	angular.Attachment0 = attachment
+	angular.MaxTorque = math.huge
+	angular.AngularVelocity = Vector3.zero
+	angular.RelativeTo = Enum.ActuatorRelativeTo.Attachment0
+	angular.Parent = droneCore
 
-		weld(chassis,h)
-
-	end
-
-	-- taillights
-
-	for _,x in ipairs({
-		-cfg.Width*.27,
-		cfg.Width*.27
-	}) do
-
-		local h = light(
-			model,
-			"TailLight",
-			Vector3.new(
-				1.4,
-				.48,
-				.18
-			),
-			chassis.CFrame *
-			CFrame.new(
-				x,
-				.05,
-				-cfg.Length/2-.05
-			),
-			Color3.fromRGB(
-				255,
-				25,
-				25
-			)
-		)
-
-		weld(chassis,h)
-
-	end
-
-	-- front splitter
-
-	local splitter = childPart(
-		model,
-		"Splitter",
-		Vector3.new(
-			cfg.Width*1.02,
-			.25,
-			1.0
-		),
-		chassis.CFrame *
-		CFrame.new(
-			0,
-			-.35,
-			cfg.Length/2+.25
-		),
-		cfg.Accent,
-		Enum.Material.CarbonFiber
-	)
-
-	weld(chassis,splitter)
-
-	-- rear diffuser
-
-	local diffuser = childPart(
-		model,
-		"Diffuser",
-		Vector3.new(
-			cfg.Width*.88,
-			.35,
-			1
-		),
-		chassis.CFrame *
-		CFrame.new(
-			0,
-			-.3,
-			-cfg.Length/2-.2
-		),
-		cfg.Accent,
-		Enum.Material.CarbonFiber
-	)
-
-	weld(chassis,diffuser)
-
-	-- spoiler for sporty vehicles
-
-	if cfg.Type == "Supercar"
-	or cfg.Type == "Hypercar"
-	or cfg.Type == "Race"
-	or cfg.Type == "Sports" then
-
-		local spoiler = childPart(
-			model,
-			"Spoiler",
-			Vector3.new(
-				cfg.Width*.92,
-				.28,
-				1.0
-			),
-			chassis.CFrame *
-			CFrame.new(
-				0,
-				cfg.Height+1.1,
-				-cfg.Length*.39
-			),
-			cfg.Accent,
-			Enum.Material.Metal
-		)
-
-		weld(chassis,spoiler)
-
-		for _,x in ipairs({
-			-cfg.Width*.30,
-			cfg.Width*.30
-		}) do
-
-			local support = childPart(
-				model,
-				"SpoilerSupport",
-				Vector3.new(
-					.22,
-					1.15,
-					.22
-				),
-				chassis.CFrame *
-				CFrame.new(
-					x,
-					cfg.Height*.6,
-					-cfg.Length*.39
-				),
-				cfg.Accent,
-				Enum.Material.Metal
-			)
-
-			weld(chassis,support)
-
-		end
-	end
-
-	-- seats
-
-	local seat = Instance.new("VehicleSeat")
-
-	seat.Name = "DriverSeat"
-	seat.Size = Vector3.new(2.3,.6,2.2)
-
-	seat.CFrame =
-		chassis.CFrame *
-		CFrame.new(
-			0,
-			cfg.Height+.55,
-			-.65
-		)
-
-	seat.Color = Color3.fromRGB(20,20,22)
-	seat.Material = Enum.Material.SmoothPlastic
-
-	seat.MaxSpeed = cfg.Speed
-	seat.Torque = cfg.Acceleration*800
-	seat.TurnSpeed = cfg.Steering
-
-	seat.CanCollide = false
-	seat.CanTouch = false
-
-	seat.Parent = model
-
-	weld(chassis,seat)
-
-	-- invisible mass below chassis
-
-	local mass = childPart(
-		model,
-		"Mass",
-		Vector3.new(
-			2,
-			.7,
-			4
-		),
-		chassis.CFrame *
-		CFrame.new(
-			0,
-			-.6,
-			0
-		),
-		Color3.new(0,0,0),
-		Enum.Material.Metal
-	)
-
-	mass.Transparency = 1
-	mass.CanCollide = false
-	mass.Massless = false
-
-	weld(chassis,mass)
-
-	return model
+	return velocity, angular
 end
 
---==============================================================
--- MOTORCYCLE
---==============================================================
+local velocityController
+local rotationController
 
-local function CreateBike(cfg)
+local function startDrone()
 
-	local model = Instance.new("Model")
-	model.Name = cfg.Name
-	model.Parent = VehiclesFolder
-
-	local frame = childPart(
-		model,
-		"Frame",
-		Vector3.new(
-			2,
-			1.2,
-			5.8
-		),
-		CFrame.new(
-			WORLD_POS.X,
-			WORLD_POS.Y+20,
-			WORLD_POS.Z
-		),
-		cfg.Color,
-		Enum.Material.Metal
-	)
-
-	model.PrimaryPart = frame
-
-	-- wheels
-
-	for _,data in ipairs({
-		{"FrontWheel",3.0},
-		{"RearWheel",-3.0}
-	}) do
-
-		local wheel = Instance.new("Part")
-
-		wheel.Name = data[1]
-		wheel.Shape = Enum.PartType.Cylinder
-
-		wheel.Size =
-			Vector3.new(
-				1.05,
-				cfg.Wheel*2,
-				cfg.Wheel*2
-			)
-
-		wheel.Color = Color3.fromRGB(7,7,9)
-		wheel.Material = Enum.Material.Rubber
-
-		wheel.CanCollide = false
-		wheel.CanTouch = false
-		wheel.Massless = true
-
-		wheel.CFrame =
-			frame.CFrame *
-			CFrame.new(
-				0,
-				-.65,
-				data[2]
-			) *
-			CFrame.Angles(
-				0,
-				0,
-				math.rad(90)
-			)
-
-		wheel.Parent = model
-
-		weld(frame,wheel)
-
-	end
-
-	-- tank
-
-	local tank = childPart(
-		model,
-		"Tank",
-		Vector3.new(
-			2.2,
-			1.5,
-			2.4
-		),
-		frame.CFrame *
-		CFrame.new(
-			0,
-			.9,
-			.35
-		),
-		cfg.Color,
-		Enum.Material.SmoothPlastic
-	)
-
-	weld(frame,tank)
-
-	-- seat
-
-	local seat = Instance.new("VehicleSeat")
-
-	seat.Name = "DriverSeat"
-	seat.Size = Vector3.new(1.8,.45,1.8)
-
-	seat.CFrame =
-		frame.CFrame *
-		CFrame.new(
-			0,
-			1.25,
-			-1.1
-		)
-
-	seat.MaxSpeed = cfg.Speed
-	seat.Torque = cfg.Acceleration*700
-	seat.TurnSpeed = cfg.Steering
-
-	seat.CanCollide = false
-	seat.CanTouch = false
-
-	seat.Parent = model
-
-	weld(frame,seat)
-
-	-- handlebars
-
-	local bars = childPart(
-		model,
-		"Handlebars",
-		Vector3.new(
-			3,
-			.18,
-			.18
-		),
-		frame.CFrame *
-		CFrame.new(
-			0,
-			1.9,
-			2.35
-		),
-		cfg.Accent,
-		Enum.Material.Metal
-	)
-
-	weld(frame,bars)
-
-	-- front fairing
-
-	local fairing = childPart(
-		model,
-		"Fairing",
-		Vector3.new(
-			1.9,
-			1.7,
-			1.6
-		),
-		frame.CFrame *
-		CFrame.new(
-			0,
-			.75,
-			2.25
-		),
-		cfg.Color,
-		Enum.Material.SmoothPlastic
-	)
-
-	weld(frame,fairing)
-
-	-- headlight
-
-	local lamp = light(
-		model,
-		"Headlight",
-		Vector3.new(
-			.8,
-			.65,
-			.25
-		),
-		frame.CFrame *
-		CFrame.new(
-			0,
-			.95,
-			3.05
-		),
-		Color3.fromRGB(
-			255,
-			245,
-			200
-		)
-	)
-
-	weld(frame,lamp)
-
-	return model
-end
-
---==============================================================
--- DESTROY VEHICLE
---==============================================================
-
-local function RemoveActiveVehicle()
-
-	if activeVehicle then
-		activeVehicle:Destroy()
-	end
-
-	activeVehicle = nil
-	activeBody = nil
-	activeSeat = nil
-	driving = false
-
-end
-
---==============================================================
--- CREATE SELECTED VEHICLE
---==============================================================
-
-local function BuildVehicle(cfg)
-
-	RemoveActiveVehicle()
-
-	local model
-
-	if cfg.Type == "Motorcycle" then
-		model = CreateBike(cfg)
-	else
-		model = CreateCar(cfg)
-	end
-
-	activeVehicle = model
-	activeBody = model.PrimaryPart
-	activeSeat = model:FindFirstChild("DriverSeat")
-
-	-- Put it into spawn position
-
-	local spawnCF =
-		CFrame.new(
-			WORLD_POS.X-350,
-			WORLD_POS.Y+18,
-			WORLD_POS.Z
-		)
-
-	model:PivotTo(spawnCF)
-
-	-- local network ownership
-
-	for _,obj in ipairs(model:GetDescendants()) do
-
-		if obj:IsA("BasePart") then
-
-			pcall(function()
-				obj:SetNetworkOwner(player)
-			end)
-
-		end
-
-	end
-
-	return model
-end
-
---==============================================================
--- DRIVE
---==============================================================
-
-local function StartDriving()
-
-	if not selectedConfig then
+	if flying then
 		return
 	end
 
-	local model = BuildVehicle(selectedConfig)
+	flying = true
 
-	if not model then
+	velocityController, rotationController =
+		createDrone()
+
+	camera.CameraType = Enum.CameraType.Scriptable
+
+end
+
+local function stopDrone()
+
+	if not flying then
 		return
 	end
 
-	driving = true
-	garageOpen = false
+	flying = false
 
-	-- hide garage
-
-	local garage = playerGui:FindFirstChild("NeonMotorsGUI")
-
-	if garage then
-		local main = garage:FindFirstChild("Main")
-		if main then
-			main.Visible = false
-		end
+	if drone then
+		drone:Destroy()
+		drone = nil
 	end
 
-	-- seat player
+	droneCore = nil
 
-	task.wait(.25)
-
-	local character = player.Character
-
-	if character and activeSeat then
-
-		local humanoid =
-			character:FindFirstChildOfClass("Humanoid")
-
-		if humanoid then
-			activeSeat:Sit(humanoid)
-		end
-
-	end
-
-	-- camera
-
-	local camera = workspace.CurrentCamera
 	camera.CameraType = Enum.CameraType.Custom
 
 end
 
---==============================================================
--- RESET
---==============================================================
+-- Start automatisch
+startDrone()
 
-local function ResetVehicle()
+UserInputService.InputBegan:Connect(function(input, processed)
 
-	if not activeVehicle or not activeBody then
-		return
-	end
-
-	activeVehicle:PivotTo(
-		CFrame.new(
-			WORLD_POS.X-350,
-			WORLD_POS.Y+18,
-			WORLD_POS.Z
-		)
-	)
-
-	activeBody.AssemblyLinearVelocity = Vector3.zero
-	activeBody.AssemblyAngularVelocity = Vector3.zero
-
-end
-
---==============================================================
--- GUI
---==============================================================
-
-local gui = Instance.new("ScreenGui")
-gui.Name = "NeonMotorsGUI"
-gui.ResetOnSpawn = false
-gui.IgnoreGuiInset = true
-gui.Parent = playerGui
-
-local main = Instance.new("Frame")
-main.Name = "Main"
-main.Size = UDim2.fromOffset(1050,650)
-main.Position = UDim2.new(.5,-525,.5,-325)
-main.BackgroundColor3 = Color3.fromRGB(10,11,15)
-main.BorderSizePixel = 0
-main.Parent = gui
-
-Instance.new("UICorner",main).CornerRadius = UDim.new(0,22)
-
---==============================================================
--- HEADER
---==============================================================
-
-local header = Instance.new("Frame")
-header.Size = UDim2.new(1,0,0,80)
-header.BackgroundColor3 = Color3.fromRGB(15,16,21)
-header.BorderSizePixel = 0
-header.Parent = main
-
-Instance.new("UICorner",header).CornerRadius = UDim.new(0,22)
-
-local title = Instance.new("TextLabel")
-title.Size = UDim2.fromOffset(450,42)
-title.Position = UDim2.fromOffset(30,14)
-title.BackgroundTransparency = 1
-title.Text = "NEON MOTORS"
-title.Font = Enum.Font.GothamBlack
-title.TextSize = 30
-title.TextColor3 = Color3.fromRGB(245,245,250)
-title.TextXAlignment = Enum.TextXAlignment.Left
-title.Parent = header
-
-local subtitle = Instance.new("TextLabel")
-subtitle.Size = UDim2.fromOffset(500,22)
-subtitle.Position = UDim2.fromOffset(32,49)
-subtitle.BackgroundTransparency = 1
-subtitle.Text = "LOCAL PERFORMANCE GARAGE"
-subtitle.Font = Enum.Font.GothamMedium
-subtitle.TextSize = 11
-subtitle.TextColor3 = Color3.fromRGB(115,120,130)
-subtitle.TextXAlignment = Enum.TextXAlignment.Left
-subtitle.Parent = header
-
---==============================================================
--- VEHICLE LIST
---==============================================================
-
-local list = Instance.new("ScrollingFrame")
-list.Name = "VehicleList"
-list.Size = UDim2.fromOffset(315,535)
-list.Position = UDim2.fromOffset(20,95)
-list.BackgroundColor3 = Color3.fromRGB(15,16,21)
-list.BorderSizePixel = 0
-list.ScrollBarThickness = 4
-list.Parent = main
-
-Instance.new("UICorner",list).CornerRadius = UDim.new(0,16)
-
-local listLayout = Instance.new("UIListLayout")
-listLayout.Padding = UDim.new(0,8)
-listLayout.Parent = list
-
---==============================================================
--- PREVIEW AREA
---==============================================================
-
-local preview = Instance.new("Frame")
-preview.Name = "Preview"
-preview.Size = UDim2.fromOffset(680,535)
-preview.Position = UDim2.fromOffset(350,95)
-preview.BackgroundColor3 = Color3.fromRGB(16,17,22)
-preview.BorderSizePixel = 0
-preview.Parent = main
-
-Instance.new("UICorner",preview).CornerRadius = UDim.new(0,16)
-
---==============================================================
--- PREVIEW CAMERA AREA
---==============================================================
-
-local viewport = Instance.new("ViewportFrame")
-viewport.Name = "VehiclePreview"
-viewport.Size = UDim2.new(1,-30,1,-145)
-viewport.Position = UDim2.fromOffset(15,15)
-viewport.BackgroundColor3 = Color3.fromRGB(7,8,11)
-viewport.BorderSizePixel = 0
-viewport.Parent = preview
-
-Instance.new("UICorner",viewport).CornerRadius = UDim.new(0,14)
-
-local previewWorld = Instance.new("WorldModel")
-previewWorld.Parent = viewport
-
-local previewCamera = Instance.new("Camera")
-previewCamera.Parent = viewport
-viewport.CurrentCamera = previewCamera
-
-local previewModel = nil
-
---==============================================================
--- PREVIEW LIGHTING
---==============================================================
-
-local function ClearPreview()
-
-	for _,v in ipairs(previewWorld:GetChildren()) do
-		v:Destroy()
-	end
-
-	previewModel = nil
-
-end
-
---==============================================================
--- PREVIEW VEHICLE
---==============================================================
-
-local function ShowPreview(cfg)
-
-	ClearPreview()
-
-	local clone
-
-	if cfg.Type == "Motorcycle" then
-		clone = CreateBike(cfg)
-	else
-		clone = CreateCar(cfg)
-	end
-
-	clone.Parent = previewWorld
-
-	previewModel = clone
-
-	local primary = clone.PrimaryPart
-
-	if not primary then
-		return
-	end
-
-	clone:PivotTo(
-		CFrame.new(
-			0,
-			0,
-			0
-		) *
-		CFrame.Angles(
-			0,
-			math.rad(-25),
-			0
-		)
-	)
-
-	previewCamera.CFrame =
-		CFrame.lookAt(
-			Vector3.new(
-				22,
-				9,
-				25
-			),
-			Vector3.new(
-				0,
-				1,
-				0
-			)
-		)
-
-end
-
---==============================================================
--- PREVIEW TEXT
---==============================================================
-
-local previewName = Instance.new("TextLabel")
-previewName.Size = UDim2.fromOffset(390,45)
-previewName.Position = UDim2.fromOffset(25,370)
-previewName.BackgroundTransparency = 1
-previewName.Text = "SELECT A VEHICLE"
-previewName.Font = Enum.Font.GothamBlack
-previewName.TextSize = 25
-previewName.TextColor3 = Color3.fromRGB(245,245,250)
-previewName.TextXAlignment = Enum.TextXAlignment.Left
-previewName.Parent = preview
-
-local previewStats = Instance.new("TextLabel")
-previewStats.Size = UDim2.fromOffset(420,42)
-previewStats.Position = UDim2.fromOffset(25,415)
-previewStats.BackgroundTransparency = 1
-previewStats.Text = ""
-previewStats.Font = Enum.Font.GothamMedium
-previewStats.TextSize = 13
-previewStats.TextColor3 = Color3.fromRGB(135,140,150)
-previewStats.TextXAlignment = Enum.TextXAlignment.Left
-previewStats.Parent = preview
-
---==============================================================
--- DRIVE BUTTON
---==============================================================
-
-local driveButton = Instance.new("TextButton")
-driveButton.Name = "Drive"
-driveButton.Size = UDim2.fromOffset(205,58)
-driveButton.Position = UDim2.new(1,-230,1,-78)
-driveButton.BackgroundColor3 = Color3.fromRGB(35,190,105)
-driveButton.Text = "DRIVE  →"
-driveButton.TextColor3 = Color3.fromRGB(255,255,255)
-driveButton.Font = Enum.Font.GothamBlack
-driveButton.TextSize = 17
-driveButton.AutoButtonColor = true
-driveButton.Parent = preview
-
-Instance.new("UICorner",driveButton).CornerRadius = UDim.new(0,12)
-
-driveButton.MouseButton1Click:Connect(function()
-
-	if selectedConfig then
-		StartDriving()
-	end
-
-end)
-
---==============================================================
--- VEHICLE SELECTION
---==============================================================
-
-local buttons = {}
-
-local function SelectVehicle(cfg,button)
-
-	selectedConfig = cfg
-	selectedName = cfg.Name
-
-	previewName.Text = cfg.Name
-
-	previewStats.Text =
-		cfg.Type ..
-		"    •    " ..
-		"TOP SPEED " ..
-		math.floor(cfg.Speed) ..
-		"    •    "ACCEL " ..
-		math.floor(cfg.Acceleration)
-
-	ShowPreview(cfg)
-
-	for _,b in pairs(buttons) do
-
-		b.BackgroundColor3 =
-			Color3.fromRGB(24,25,31)
-
-	end
-
-	button.BackgroundColor3 =
-		Color3.fromRGB(38,75,65)
-
-end
-
-for _,cfg in ipairs(Vehicles) do
-
-	local button = Instance.new("TextButton")
-
-	button.Size = UDim2.new(1,-10,0,70)
-	button.BackgroundColor3 = Color3.fromRGB(24,25,31)
-	button.BorderSizePixel = 0
-
-	button.Text =
-		cfg.Name ..
-		"\n" ..
-		cfg.Type ..
-		"  •  " ..
-		math.floor(cfg.Speed) ..
-		" SPD"
-
-	button.TextColor3 =
-		Color3.fromRGB(235,235,240)
-
-	button.Font =
-		Enum.Font.GothamBold
-
-	button.TextSize = 13
-
-	button.Parent = list
-
-	Instance.new("UICorner",button).CornerRadius = UDim.new(0,11)
-
-	buttons[cfg.Name] = button
-
-	button.MouseButton1Click:Connect(function()
-		SelectVehicle(cfg,button)
-	end)
-
-end
-
-list.CanvasSize =
-	UDim2.new(
-		0,
-		0,
-		0,
-		#Vehicles*78
-	)
-
---==============================================================
--- CLOSE GARAGE BUTTON
---==============================================================
-
-local close = Instance.new("TextButton")
-close.Size = UDim2.fromOffset(42,42)
-close.Position = UDim2.new(1,-55,0,19)
-close.BackgroundColor3 = Color3.fromRGB(35,36,43)
-close.Text = "×"
-close.TextColor3 = Color3.fromRGB(240,240,245)
-close.Font = Enum.Font.GothamBold
-close.TextSize = 25
-close.Parent = main
-
-Instance.new("UICorner",close).CornerRadius = UDim.new(1,0)
-
-close.MouseButton1Click:Connect(function()
-	main.Visible = false
-	garageOpen = false
-end)
-
---==============================================================
--- GARAGE TOGGLE
---==============================================================
-
-local garageButton = Instance.new("TextButton")
-garageButton.Size = UDim2.fromOffset(58,58)
-garageButton.Position = UDim2.fromOffset(20,20)
-garageButton.BackgroundColor3 = Color3.fromRGB(15,16,20)
-garageButton.Text = "🚗"
-garageButton.TextSize = 26
-garageButton.Parent = gui
-
-Instance.new("UICorner",garageButton).CornerRadius = UDim.new(1,0)
-
-garageButton.MouseButton1Click:Connect(function()
-
-	garageOpen = not garageOpen
-	main.Visible = garageOpen
-
-end)
-
---==============================================================
--- HUD
---==============================================================
-
-local hud = Instance.new("Frame")
-hud.Name = "HUD"
-hud.Size = UDim2.fromOffset(280,120)
-hud.Position = UDim2.new(.5,-140,1,-150)
-hud.BackgroundColor3 = Color3.fromRGB(10,11,14)
-hud.BorderSizePixel = 0
-hud.Visible = false
-hud.Parent = gui
-
-Instance.new("UICorner",hud).CornerRadius = UDim.new(0,18)
-
-local speedLabel = Instance.new("TextLabel")
-speedLabel.Size = UDim2.new(1,0,0,72)
-speedLabel.BackgroundTransparency = 1
-speedLabel.Text = "0"
-speedLabel.Font = Enum.Font.GothamBlack
-speedLabel.TextSize = 50
-speedLabel.TextColor3 = Color3.fromRGB(245,245,250)
-speedLabel.Parent = hud
-
-local unitLabel = Instance.new("TextLabel")
-unitLabel.Size = UDim2.new(1,0,0,22)
-unitLabel.Position = UDim2.fromOffset(0,72)
-unitLabel.BackgroundTransparency = 1
-unitLabel.Text = "STUDS / SECOND"
-unitLabel.Font = Enum.Font.GothamBold
-unitLabel.TextSize = 10
-unitLabel.TextColor3 = Color3.fromRGB(110,115,125)
-unitLabel.Parent = hud
-
-local driftLabel = Instance.new("TextLabel")
-driftLabel.Size = UDim2.fromOffset(220,35)
-driftLabel.Position = UDim2.new(.5,-110,1,-195)
-driftLabel.BackgroundTransparency = 1
-driftLabel.Text = ""
-driftLabel.Font = Enum.Font.GothamBlack
-driftLabel.TextSize = 18
-driftLabel.TextColor3 = Color3.fromRGB(255,110,35)
-driftLabel.Parent = gui
-
---==============================================================
--- INPUT
---==============================================================
-
-UIS.InputBegan:Connect(function(input,gp)
-
-	if gp then
+	if processed then
 		return
 	end
 
@@ -1796,20 +308,19 @@ UIS.InputBegan:Connect(function(input,gp)
 		keys.A = true
 	elseif input.KeyCode == Enum.KeyCode.D then
 		keys.D = true
-	elseif input.KeyCode == Enum.KeyCode.LeftShift then
-		keys.Shift = true
 	elseif input.KeyCode == Enum.KeyCode.Space then
-		keys.Space = true
-	elseif input.KeyCode == Enum.KeyCode.R then
-		ResetVehicle()
-	elseif input.KeyCode == Enum.KeyCode.M then
-		garageOpen = not garageOpen
-		main.Visible = garageOpen
+		keys.Up = true
+	elseif input.KeyCode == Enum.KeyCode.LeftControl then
+		keys.Down = true
+	elseif input.KeyCode == Enum.KeyCode.LeftShift then
+		keys.Boost = true
+	elseif input.KeyCode == Enum.KeyCode.Q then
+		stopDrone()
 	end
 
 end)
 
-UIS.InputEnded:Connect(function(input)
+UserInputService.InputEnded:Connect(function(input)
 
 	if input.KeyCode == Enum.KeyCode.W then
 		keys.W = false
@@ -1819,429 +330,134 @@ UIS.InputEnded:Connect(function(input)
 		keys.A = false
 	elseif input.KeyCode == Enum.KeyCode.D then
 		keys.D = false
-	elseif input.KeyCode == Enum.KeyCode.LeftShift then
-		keys.Shift = false
 	elseif input.KeyCode == Enum.KeyCode.Space then
-		keys.Space = false
+		keys.Up = false
+	elseif input.KeyCode == Enum.KeyCode.LeftControl then
+		keys.Down = false
+	elseif input.KeyCode == Enum.KeyCode.LeftShift then
+		keys.Boost = false
 	end
 
 end)
 
---==============================================================
--- PHYSICS
---==============================================================
+local smoothVelocity = Vector3.zero
+local smoothTilt = Vector3.zero
 
-local function VehiclePhysics(dt)
+RunService.RenderStepped:Connect(function(dt)
 
-	if not driving then
+	if not flying then
 		return
 	end
 
-	if not activeBody then
+	if not droneCore or not droneCore.Parent then
 		return
 	end
 
-	if not activeBody.Parent then
-		return
-	end
-
-	local body = activeBody
-
-	local velocity =
-		body.AssemblyLinearVelocity
-
-	local forward =
-		body.CFrame.LookVector
-
-	local right =
-		body.CFrame.RightVector
-
-	local forwardVelocity =
-		velocity:Dot(forward)
-
-	local lateralVelocity =
-		velocity:Dot(right)
-
-	-- throttle
+	-- Bewegungsrichtung
+	local move = Vector3.zero
 
 	if keys.W then
-
-		body:ApplyImpulse(
-			forward *
-			selectedConfig.Acceleration *
-			body.AssemblyMass *
-			dt
-		)
-
+		move += Vector3.new(0, 0, -1)
 	end
 
 	if keys.S then
-
-		if forwardVelocity > 5 then
-
-			body:ApplyImpulse(
-				-forward *
-				selectedConfig.Braking *
-				body.AssemblyMass *
-				dt
-			)
-
-		else
-
-			body:ApplyImpulse(
-				-forward *
-				selectedConfig.Acceleration *
-				.65 *
-				body.AssemblyMass *
-				dt
-			)
-
-		end
-
+		move += Vector3.new(0, 0, 1)
 	end
-
-	-- steering
-
-	local steering = 0
 
 	if keys.A then
-		steering = -1
+		move += Vector3.new(-1, 0, 0)
+	end
+
+	if keys.D then
+		move += Vector3.new(1, 0, 0)
+	end
+
+	if keys.Up then
+		move += Vector3.new(0, 1, 0)
+	end
+
+	if keys.Down then
+		move += Vector3.new(0, -1, 0)
+	end
+
+	if move.Magnitude > 0 then
+		move = move.Unit
+	end
+
+	local currentSpeed =
+		keys.Boost and boostSpeed or speed
+
+	local desired =
+		droneCore.CFrame:VectorToWorldSpace(move)
+		* currentSpeed
+
+	-- weiches Schweben
+	smoothVelocity =
+		smoothVelocity:Lerp(
+			desired,
+			math.clamp(dt * 5, 0, 1)
+		)
+
+	velocityController.VectorVelocity =
+		smoothVelocity
+
+	-- Neigung
+	local pitch = 0
+	local roll = 0
+
+	if keys.W then
+		pitch = math.rad(-12)
+	elseif keys.S then
+		pitch = math.rad(12)
+	end
+
+	if keys.A then
+		roll = math.rad(14)
 	elseif keys.D then
-		steering = 1
+		roll = math.rad(-14)
 	end
 
-	local speedFactor =
-		math.clamp(
-			math.abs(forwardVelocity)/35,
-			.15,
-			1.35
+	smoothTilt =
+		smoothTilt:Lerp(
+			Vector3.new(
+				pitch,
+				0,
+				roll
+			),
+			math.clamp(dt * 7, 0, 1)
 		)
 
-	local steerPower =
-		selectedConfig.Steering *
-		speedFactor
-
-	if keys.Shift then
-		steerPower *= 1.4
-	end
-
-	if math.abs(forwardVelocity) > 2
-	and steering ~= 0 then
-
-		body.AssemblyAngularVelocity =
-			Vector3.new(
-				0,
-				-steering *
-				steerPower,
-				0
-			)
-
-	end
-
-	-- grip
-
-	local grip
-
-	if keys.Shift then
-		grip = selectedConfig.DriftGrip
-	else
-		grip = selectedConfig.Grip
-	end
-
-	local sideCorrection =
-		right *
-		lateralVelocity *
-		grip
-
-	body:ApplyImpulse(
-		-sideCorrection *
-		body.AssemblyMass *
-		dt
-	)
-
-	-- handbrake
-
-	if keys.Space then
-
-		body.AssemblyLinearVelocity *=
-			math.max(
-				0,
-				1-dt*3.5
-			)
-
-	end
-
-	-- speed limiter
-
-	local maxSpeed =
-		selectedConfig.Speed
-
-	local horizontal =
+	-- Drohnenrotation
+	rotationController.AngularVelocity =
 		Vector3.new(
-			velocity.X,
 			0,
-			velocity.Z
+			(keys.A and 0.7 or 0) +
+			(keys.D and -0.7 or 0),
+			0
 		)
 
-	if horizontal.Magnitude > maxSpeed then
-
-		local limited =
-			horizontal.Unit *
-			maxSpeed
-
-		body.AssemblyLinearVelocity =
-			Vector3.new(
-				limited.X,
-				velocity.Y,
-				limited.Z
-			)
-
-	end
-
-	-- drift indicator
-
-	if keys.Shift
-	and math.abs(lateralVelocity) > 4
-	and math.abs(forwardVelocity) > 15 then
-
-		driftLabel.Text = "🔥 DRIFT"
-
-	else
-
-		driftLabel.Text = ""
-
-	end
-
-end
-
---==============================================================
--- CAMERA
---==============================================================
-
-local function UpdateCamera()
-
-	if not driving then
-		return
-	end
-
-	if not activeBody then
-		return
-	end
-
-	local camera = workspace.CurrentCamera
-
-	local body = activeBody
-
-	local velocity =
-		body.AssemblyLinearVelocity
-
-	local speed =
-		velocity.Magnitude
-
-	local distance =
-		18 +
-		math.clamp(
-			speed/15,
-			0,
-			10
-		)
-
-	local height =
-		6.5 +
-		math.clamp(
-			speed/50,
-			0,
-			4
-		)
+	-- Kamera hinter der Drohne
+	local camDistance = keys.Boost and 13 or 10
 
 	local cameraPosition =
-		body.Position -
-		body.CFrame.LookVector *
-		distance +
-		Vector3.new(
-			0,
-			height,
-			0
-		)
+		droneCore.Position
+		- droneCore.CFrame.LookVector * camDistance
+		+ Vector3.new(0, 5, 0)
 
 	local target =
-		body.Position +
-		Vector3.new(
-			0,
-			1.5,
-			0
-		)
+		droneCore.Position
+		+ droneCore.CFrame.LookVector * 8
 
-	local wanted =
+	local desiredCamera =
 		CFrame.lookAt(
 			cameraPosition,
 			target
 		)
 
-	camera.CameraType =
-		Enum.CameraType.Scriptable
-
 	camera.CFrame =
 		camera.CFrame:Lerp(
-			wanted,
-			.13
+			desiredCamera,
+			math.clamp(dt * 8, 0, 1)
 		)
 
-end
-
---==============================================================
--- HUD
---==============================================================
-
-local function UpdateHUD()
-
-	if not driving or not activeBody then
-		hud.Visible = false
-		return
-	end
-
-	hud.Visible = true
-
-	local speed =
-		math.floor(
-			activeBody.AssemblyLinearVelocity.Magnitude
-		)
-
-	speedLabel.Text =
-		tostring(speed)
-
-	if selectedConfig then
-
-		if speed >
-			selectedConfig.Speed*.85 then
-
-			speedLabel.TextColor3 =
-				Color3.fromRGB(
-					255,
-					65,
-					50
-				)
-
-		elseif speed >
-			selectedConfig.Speed*.55 then
-
-			speedLabel.TextColor3 =
-				Color3.fromRGB(
-					255,
-					190,
-					55
-				)
-
-		else
-
-			speedLabel.TextColor3 =
-				Color3.fromRGB(
-					245,
-					245,
-					250
-				)
-
-		end
-
-	end
-
-end
-
---==============================================================
--- RETURN TO GARAGE
---==============================================================
-
-local function OpenGarage()
-
-	driving = false
-
-	hud.Visible = false
-	driftLabel.Text = ""
-
-	main.Visible = true
-	garageOpen = true
-
-	if activeVehicle then
-
-		activeVehicle:Destroy()
-
-		activeVehicle = nil
-		activeBody = nil
-		activeSeat = nil
-
-	end
-
-	local camera = workspace.CurrentCamera
-	camera.CameraType = Enum.CameraType.Custom
-
-end
-
--- double press M while driving opens garage
-
-UIS.InputBegan:Connect(function(input,gp)
-
-	if gp then
-		return
-	end
-
-	if input.KeyCode == Enum.KeyCode.M
-	and driving then
-
-		OpenGarage()
-
-	end
-
 end)
-
---==============================================================
--- DEFAULT SELECTION
---==============================================================
-
-task.wait(.5)
-
-do
-
-	local first = Vehicles[1]
-
-	local firstButton =
-		buttons[first.Name]
-
-	if firstButton then
-		SelectVehicle(
-			first,
-			firstButton
-		)
-	end
-
-end
-
---==============================================================
--- LOOP
---==============================================================
-
-RunService.Heartbeat:Connect(function(dt)
-
-	VehiclePhysics(
-		math.min(dt,.05)
-	)
-
-end)
-
-RunService.RenderStepped:Connect(function()
-
-	UpdateCamera()
-	UpdateHUD()
-
-end)
-
-print("========================================")
-print("NEON MOTORS LOADED")
-print("Select a vehicle in the garage.")
-print("Press DRIVE in the preview.")
-print("W/S = drive")
-print("A/D = steering")
-print("SHIFT = drift")
-print("SPACE = handbrake")
-print("R = reset")
-print("M = garage")
-print("========================================")
