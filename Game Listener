@@ -1,193 +1,78 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 
-		local filter =
-			string.lower(search.Text)
+local player = Players.LocalPlayer
+local camera = workspace.CurrentCamera
 
-		if filter ~= ""
-			and not string.find(textSearch, filter, 1, true)
-		then
-			return
-		end
+local gui = Instance.new("ScreenGui")
+gui.Name = "AimTraining"
+gui.ResetOnSpawn = false
+gui.Parent = player:WaitForChild("PlayerGui")
 
-		local row = Instance.new("Frame")
-		row.Size = UDim2.new(1, -8, 0, 62)
-		row.BackgroundColor3 = Color3.fromRGB(30, 33, 41)
-		row.BorderSizePixel = 0
-		row.Parent = scroll
+local button = Instance.new("TextButton")
+button.Size = UDim2.fromOffset(180, 45)
+button.Position = UDim2.fromOffset(20, 100)
+button.Text = "Aim Assist: OFF"
+button.TextSize = 18
+button.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+button.TextColor3 = Color3.new(1, 1, 1)
+button.Parent = gui
 
-		local rowCorner = Instance.new("UICorner")
-		rowCorner.CornerRadius = UDim.new(0, 8)
-		rowCorner.Parent = row
+local enabled = false
 
-		--------------------------------------------------------
-		-- ZEIT
-		--------------------------------------------------------
-
-		local timeLabel = Instance.new("TextLabel")
-		timeLabel.Size = UDim2.new(0, 70, 1, 0)
-		timeLabel.Position = UDim2.new(0, 8, 0, 0)
-		timeLabel.BackgroundTransparency = 1
-		timeLabel.Text = entry.Time
-		timeLabel.TextColor3 = Color3.fromRGB(145, 150, 160)
-		timeLabel.Font = Enum.Font.Gotham
-		timeLabel.TextSize = 12
-		timeLabel.Parent = row
-
-		--------------------------------------------------------
-		-- AKTION
-		--------------------------------------------------------
-
-		local actionLabel = Instance.new("TextLabel")
-		actionLabel.Size = UDim2.new(0.42, 0, 0, 24)
-		actionLabel.Position = UDim2.new(0, 80, 0, 7)
-		actionLabel.BackgroundTransparency = 1
-		actionLabel.Text =
-			"[" .. entry.Type .. "] " .. entry.Action
-		actionLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-		actionLabel.Font = Enum.Font.GothamBold
-		actionLabel.TextSize = 14
-		actionLabel.TextXAlignment = Enum.TextXAlignment.Left
-		actionLabel.TextTruncate = Enum.TextTruncate.AtEnd
-		actionLabel.Parent = row
-
-		--------------------------------------------------------
-		-- SPIELER
-		--------------------------------------------------------
-
-		local playerLabel = Instance.new("TextLabel")
-		playerLabel.Size = UDim2.new(0.42, 0, 0, 20)
-		playerLabel.Position = UDim2.new(0, 80, 0, 32)
-		playerLabel.BackgroundTransparency = 1
-		playerLabel.Text =
-			"Spieler: " .. entry.Player
-		playerLabel.TextColor3 = Color3.fromRGB(150, 155, 165)
-		playerLabel.Font = Enum.Font.Gotham
-		playerLabel.TextSize = 12
-		playerLabel.TextXAlignment = Enum.TextXAlignment.Left
-		playerLabel.TextTruncate = Enum.TextTruncate.AtEnd
-		playerLabel.Parent = row
-
-		--------------------------------------------------------
-		-- AGAIN
-		--------------------------------------------------------
-
-		if entry.Replayable then
-
-			local again = Instance.new("TextButton")
-			again.Size = UDim2.new(0, 80, 0, 34)
-			again.Position = UDim2.new(1, -90, 0.5, -17)
-			again.BackgroundColor3 = Color3.fromRGB(55, 120, 255)
-			again.BorderSizePixel = 0
-			again.Text = "Again"
-			again.TextColor3 = Color3.fromRGB(255, 255, 255)
-			again.Font = Enum.Font.GothamBold
-			again.TextSize = 13
-			again.Parent = row
-
-			local againCorner = Instance.new("UICorner")
-			againCorner.CornerRadius = UDim.new(0, 7)
-			againCorner.Parent = again
-
-			again.MouseButton1Click:Connect(function()
-
-				remote:FireServer(
-					"REPLAY",
-					entry.Id
-				)
-
-			end)
-
-		end
-	end
-
-	------------------------------------------------------------
-	-- ALLE BISHERIGEN LOGS
-	------------------------------------------------------------
-
-	for _, entry in ipairs(logs) do
-		addEntry(entry)
-	end
-
-	------------------------------------------------------------
-	-- NEUE LOGS
-	------------------------------------------------------------
-
-	local connection
-
-	connection = remote.OnClientEvent:Connect(
-		function(command, data)
-
-			if command == "ADD" then
-
-				addEntry(data)
-
-				task.defer(function()
-					scroll.CanvasPosition =
-						Vector2.new(
-							0,
-							scroll.AbsoluteCanvasSize.Y
-						)
-				end)
-
-			elseif command == "ERROR" then
-
-				warn(
-					"[ActionLogger]",
-					data
-				)
-
-			end
-
-		end
-	)
-
-	------------------------------------------------------------
-	-- SUCHFILTER
-	------------------------------------------------------------
-
-	search:GetPropertyChangedSignal("Text"):Connect(function()
-
-		for _, child in ipairs(scroll:GetChildren()) do
-
-			if child:IsA("Frame") then
-				child:Destroy()
-			end
-
-		end
-
-		for _, entry in ipairs(logs) do
-			addEntry(entry)
-		end
-
-	end)
-
-end
-
-----------------------------------------------------------------
--- GUI FÜR ALLE SPIELER
-----------------------------------------------------------------
-
-Players.PlayerAdded:Connect(function(player)
-
-	task.defer(function()
-		createGui(player)
-	end)
-
+button.MouseButton1Click:Connect(function()
+	enabled = not enabled
+	button.Text = enabled and "Aim Assist: ON" or "Aim Assist: OFF"
+	button.BackgroundColor3 = enabled
+		and Color3.fromRGB(40, 130, 70)
+		or Color3.fromRGB(35, 35, 40)
 end)
 
-for _, player in ipairs(Players:GetPlayers()) do
+local function getNearestDummy()
+	local nearest
+	local distance = math.huge
 
-	task.defer(function()
-		createGui(player)
-	end)
+	for _, obj in ipairs(workspace:GetChildren()) do
+		if obj:IsA("Model") and obj:GetAttribute("AimTrainingDummy") then
+			local head = obj:FindFirstChild("Head")
 
+			if head then
+				local screenPos, visible =
+					camera:WorldToViewportPoint(head.Position)
+
+				if visible then
+					local center = Vector2.new(
+						camera.ViewportSize.X / 2,
+						camera.ViewportSize.Y / 2
+					)
+
+					local d = (
+						Vector2.new(screenPos.X, screenPos.Y) - center
+					).Magnitude
+
+					if d < distance then
+						distance = d
+						nearest = head
+					end
+				end
+			end
+		end
+	end
+
+	return nearest
 end
 
-----------------------------------------------------------------
--- STARTMELDUNG
-----------------------------------------------------------------
+RunService.RenderStepped:Connect(function()
+	if not enabled then
+		return
+	end
 
-print("==========================================")
-print(" Action Logger gestartet")
-print(" Alle Spieler haben Zugriff.")
-print(" Logs:", MAX_LOGS)
-print("==========================================")
+	local head = getNearestDummy()
+
+	if head then
+		camera.CFrame = CFrame.lookAt(
+			camera.CFrame.Position,
+			head.Position
+		)
+	end
+end)
